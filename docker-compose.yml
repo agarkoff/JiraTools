@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: jira-tools-db
+    environment:
+      POSTGRES_DB: jiratools
+      POSTGRES_USER: jiratools
+      POSTGRES_PASSWORD: jiratools
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jiratools -d jiratools"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: jira-tools-backend
+    environment:
+      DATABASE_URL: postgres://jiratools:jiratools@postgres:5432/jiratools?sslmode=disable
+      PORT: "8080"
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    container_name: jira-tools-frontend
+    ports:
+      - "3080:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
