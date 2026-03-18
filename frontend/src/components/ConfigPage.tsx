@@ -95,6 +95,30 @@ export default function ConfigPage() {
       </div>
 
       <div className="config-section">
+        <h3>Ollama (LLM)</h3>
+        <div className="param-form">
+          <div className="form-group">
+            <label>URL Ollama</label>
+            <input
+              type="text"
+              value={cfg.ollama_url || ''}
+              onChange={e => setCfg({ ...cfg, ollama_url: e.target.value })}
+              placeholder="http://host.docker.internal:11434"
+            />
+          </div>
+          <div className="form-group">
+            <label>Модель</label>
+            <input
+              type="text"
+              value={cfg.ollama_model || ''}
+              onChange={e => setCfg({ ...cfg, ollama_model: e.target.value })}
+              placeholder="qwen3-coder:30b"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="config-section">
         <h3>Пользователи</h3>
         <ul className="user-list">
           {users.map(u => (

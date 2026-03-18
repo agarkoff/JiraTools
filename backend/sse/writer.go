@@ -137,3 +137,7 @@ func (s *Writer) SendFile(filename, content string) {
 func (s *Writer) RunID() int {
 	return s.runID
 }
+
+func (s *Writer) DB() *sql.DB {
+	return s.db
+}

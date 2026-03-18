@@ -1,6 +1,7 @@
 package functions
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -8,6 +9,7 @@ import (
 	"unicode"
 
 	"jira-tools-web/jira"
+	"jira-tools-web/llm"
 	"jira-tools-web/models"
 	"jira-tools-web/sse"
 )
@@ -189,7 +191,76 @@ func RunGroupOrphans(cfg models.JiraConfig, params map[string]string, out *sse.W
 	}
 	out.Printf("Историй для сопоставления: %d", len(stories))
 
-	// --- 3. Tokenize everything (summary + description), build TF-IDF ---
+	// --- 3. Choose mode ---
+	useLLM := params["mode"] == "llm"
+	var llmCfg llm.Config
+	if useLLM {
+		lc, err := models.LoadLLMConfig(out.DB())
+		if err != nil || lc.URL == "" || lc.Model == "" {
+			return fmt.Errorf("Ollama не настроена. Укажите URL и модель в Настройках")
+		}
+		llmCfg = llm.Config{URL: lc.URL, Model: lc.Model}
+		out.Printf("Режим: LLM (%s)", llmCfg.Model)
+	} else {
+		out.Printf("Режим: TF-IDF")
+	}
+
+	var realGroups []issueGroup
+	var singletons []models.Issue
+
+	if useLLM {
+		realGroups, singletons = groupWithLLM(orphans, stories, llmCfg, out)
+	} else {
+		realGroups, singletons = groupWithTFIDF(orphans, stories)
+	}
+
+	// --- Output ---
+	out.Printf("Групп (2+ задачи): %d | Без группы: %d", len(realGroups), len(singletons))
+
+	headers := []string{"Key", "Тип", "Статус", "Автор", "Название"}
+
+	for gi, g := range realGroups {
+		groupName := fmt.Sprintf("Группа %d (%d задач)", gi+1, len(g.issues))
+		if g.storyKey != "" {
+			groupName += fmt.Sprintf(" → %s: %s", g.storyKey, g.storyTitle)
+		}
+
+		rows := make([][]string, 0, len(g.issues))
+		for _, issue := range g.issues {
+			rows = append(rows, []string{
+				issue.Key,
+				issue.Fields.IssueType.Name,
+				issue.Fields.Status.Name,
+				jira.FormatAuthor(issue),
+				issue.Fields.Summary,
+			})
+		}
+		out.SendGroupedTable(groupName, "group", headers, rows)
+	}
+
+	if len(singletons) > 0 {
+		rows := make([][]string, 0, len(singletons))
+		for _, issue := range singletons {
+			rows = append(rows, []string{
+				issue.Key,
+				issue.Fields.IssueType.Name,
+				issue.Fields.Status.Name,
+				jira.FormatAuthor(issue),
+				issue.Fields.Summary,
+			})
+		}
+		out.SendTable(headers, rows)
+	}
+
+	return nil
+}
+
+// --- TF-IDF grouping ---
+
+func groupWithTFIDF(orphans, stories []models.Issue) ([]issueGroup, []models.Issue) {
+	const clusterThreshold = 0.4
+	const storyThreshold = 0.2
+
 	issueText := func(issue models.Issue) string {
 		text := issue.Fields.Summary
 		if issue.Fields.Description != "" {
@@ -221,8 +292,6 @@ func RunGroupOrphans(cfg models.JiraConfig, params map[string]string, out *sse.W
 		storyVecs[i] = model.vectorize(tokens)
 	}
 
-	// --- 4. Centroid-based clustering ---
-	// Build index: orphan key -> vec index
 	orphanIdx := make(map[string]int, len(orphans))
 	for i, o := range orphans {
 		orphanIdx[o.Key] = i
@@ -246,7 +315,6 @@ func RunGroupOrphans(cfg models.JiraConfig, params map[string]string, out *sse.W
 	var groups []issueGroup
 
 	for {
-		// Find first unassigned
 		seed := -1
 		for i, a := range assigned {
 			if !a {
@@ -261,7 +329,6 @@ func RunGroupOrphans(cfg models.JiraConfig, params map[string]string, out *sse.W
 		memberIdxs := []int{seed}
 		assigned[seed] = true
 
-		// Iteratively grow group: compare candidates against group centroid
 		changed := true
 		for changed {
 			changed = false
@@ -285,7 +352,6 @@ func RunGroupOrphans(cfg models.JiraConfig, params map[string]string, out *sse.W
 		groups = append(groups, issueGroup{issues: issues})
 	}
 
-	// Separate real groups (2+) from singletons
 	var realGroups []issueGroup
 	var singletons []models.Issue
 	for _, g := range groups {
@@ -296,12 +362,10 @@ func RunGroupOrphans(cfg models.JiraConfig, params map[string]string, out *sse.W
 		}
 	}
 
-	// Sort real groups by size descending
 	sort.Slice(realGroups, func(i, j int) bool {
 		return len(realGroups[i].issues) > len(realGroups[j].issues)
 	})
 
-	// --- 5. Match each group to best story ---
 	for gi := range realGroups {
 		var memberIdxs []int
 		for _, issue := range realGroups[gi].issues {
@@ -327,44 +391,143 @@ func RunGroupOrphans(cfg models.JiraConfig, params map[string]string, out *sse.W
 		}
 	}
 
-	// --- 6. Output ---
-	out.Printf("Групп (2+ задачи): %d | Без группы: %d", len(realGroups), len(singletons))
+	return realGroups, singletons
+}
 
-	headers := []string{"Key", "Тип", "Статус", "Автор", "Название"}
+// --- LLM grouping ---
 
-	for gi, g := range realGroups {
-		groupName := fmt.Sprintf("Группа %d (%d задач)", gi+1, len(g.issues))
-		if g.storyKey != "" {
-			groupName += fmt.Sprintf(" → %s: %s (%.0f%%)", g.storyKey, g.storyTitle, g.score*100)
-		}
+type llmGroupResult struct {
+	Groups []struct {
+		StoryKey string   `json:"story_key"`
+		TaskKeys []string `json:"task_keys"`
+	} `json:"groups"`
+	Ungrouped []string `json:"ungrouped"`
+}
 
-		rows := make([][]string, 0, len(g.issues))
-		for _, issue := range g.issues {
-			rows = append(rows, []string{
-				issue.Key,
-				issue.Fields.IssueType.Name,
-				issue.Fields.Status.Name,
-				jira.FormatAuthor(issue),
-				issue.Fields.Summary,
-			})
-		}
-		out.SendGroupedTable(groupName, "group", headers, rows)
+func groupWithLLM(orphans, stories []models.Issue, cfg llm.Config, out *sse.Writer) ([]issueGroup, []models.Issue) {
+	// Build compact lists for the prompt
+	var taskLines []string
+	for _, o := range orphans {
+		taskLines = append(taskLines, fmt.Sprintf("%s: %s", o.Key, o.Fields.Summary))
+	}
+	var storyLines []string
+	for _, s := range stories {
+		storyLines = append(storyLines, fmt.Sprintf("%s: %s", s.Key, s.Fields.Summary))
 	}
 
-	// Singletons as a separate table
-	if len(singletons) > 0 {
-		rows := make([][]string, 0, len(singletons))
-		for _, issue := range singletons {
-			rows = append(rows, []string{
-				issue.Key,
-				issue.Fields.IssueType.Name,
-				issue.Fields.Status.Name,
-				jira.FormatAuthor(issue),
-				issue.Fields.Summary,
-			})
-		}
-		out.SendTable(headers, rows)
+	// Send in batches if too many orphans
+	batchSize := 80
+	if len(orphans) <= batchSize {
+		return llmGroupBatch(taskLines, storyLines, orphans, stories, cfg, out)
 	}
 
-	return nil
+	// Process in batches
+	var allGroups []issueGroup
+	var allSingletons []models.Issue
+	for i := 0; i < len(orphans); i += batchSize {
+		end := i + batchSize
+		if end > len(orphans) {
+			end = len(orphans)
+		}
+		batchOrphans := orphans[i:end]
+		batchLines := taskLines[i:end]
+		out.Printf("Обработка пакета %d-%d из %d...", i+1, end, len(orphans))
+		groups, singles := llmGroupBatch(batchLines, storyLines, batchOrphans, stories, cfg, out)
+		allGroups = append(allGroups, groups...)
+		allSingletons = append(allSingletons, singles...)
+	}
+
+	sort.Slice(allGroups, func(i, j int) bool {
+		return len(allGroups[i].issues) > len(allGroups[j].issues)
+	})
+	return allGroups, allSingletons
+}
+
+func llmGroupBatch(taskLines, storyLines []string, orphans, stories []models.Issue, cfg llm.Config, out *sse.Writer) ([]issueGroup, []models.Issue) {
+	prompt := fmt.Sprintf(`/no_think
+You are a Jira task analyzer. Group orphan tasks by semantic similarity and match each group to the most relevant story.
+
+ORPHAN TASKS (no linked story):
+%s
+
+EXISTING STORIES:
+%s
+
+Return ONLY valid JSON (no markdown, no explanation):
+{"groups":[{"story_key":"STORY-KEY","task_keys":["TASK-1","TASK-2"]}],"ungrouped":["TASK-X"]}
+
+Rules:
+- Group tasks that are semantically related (same feature, module, or topic)
+- Each group must have 2+ tasks
+- Match each group to the single best story, or use "" if no story fits
+- Tasks that don't fit any group go into "ungrouped"
+- Use exact keys from the lists above`,
+		strings.Join(taskLines, "\n"), strings.Join(storyLines, "\n"))
+
+	out.Printf("Отправка запроса в LLM...")
+	response, err := llm.Generate(cfg, prompt)
+	if err != nil {
+		out.Printf("[ОШИБКА LLM] %v — fallback на TF-IDF", err)
+		return groupWithTFIDF(orphans, stories)
+	}
+
+	// Extract JSON from response (might have markdown fences)
+	jsonStr := response
+	if idx := strings.Index(jsonStr, "{"); idx >= 0 {
+		jsonStr = jsonStr[idx:]
+	}
+	if idx := strings.LastIndex(jsonStr, "}"); idx >= 0 {
+		jsonStr = jsonStr[:idx+1]
+	}
+
+	var result llmGroupResult
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		out.Printf("[ОШИБКА] Не удалось разобрать ответ LLM: %v — fallback на TF-IDF", err)
+		return groupWithTFIDF(orphans, stories)
+	}
+
+	// Build index
+	orphanMap := make(map[string]models.Issue, len(orphans))
+	for _, o := range orphans {
+		orphanMap[o.Key] = o
+	}
+	storyMap := make(map[string]models.Issue, len(stories))
+	for _, s := range stories {
+		storyMap[s.Key] = s
+	}
+
+	assigned := make(map[string]bool)
+	var realGroups []issueGroup
+
+	for _, g := range result.Groups {
+		var issues []models.Issue
+		for _, key := range g.TaskKeys {
+			if issue, ok := orphanMap[key]; ok && !assigned[key] {
+				issues = append(issues, issue)
+				assigned[key] = true
+			}
+		}
+		if len(issues) < 2 {
+			continue
+		}
+		group := issueGroup{issues: issues}
+		if story, ok := storyMap[g.StoryKey]; ok {
+			group.storyKey = story.Key
+			group.storyTitle = story.Fields.Summary
+		}
+		realGroups = append(realGroups, group)
+	}
+
+	var singletons []models.Issue
+	for _, o := range orphans {
+		if !assigned[o.Key] {
+			singletons = append(singletons, o)
+		}
+	}
+
+	sort.Slice(realGroups, func(i, j int) bool {
+		return len(realGroups[i].issues) > len(realGroups[j].issues)
+	})
+
+	return realGroups, singletons
 }

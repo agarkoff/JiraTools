@@ -49,6 +49,22 @@ func LoadJiraConfig(db *sql.DB) (JiraConfig, error) {
 	}, nil
 }
 
+type LLMConfig struct {
+	URL   string
+	Model string
+}
+
+func LoadLLMConfig(db *sql.DB) (LLMConfig, error) {
+	cfg, err := GetConfig(db)
+	if err != nil {
+		return LLMConfig{}, err
+	}
+	return LLMConfig{
+		URL:   cfg["ollama_url"],
+		Model: cfg["ollama_model"],
+	}, nil
+}
+
 // Users DB operations
 
 func GetUsers(db *sql.DB) ([]string, error) {

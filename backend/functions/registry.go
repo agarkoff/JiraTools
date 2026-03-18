@@ -113,6 +113,7 @@ func GetRegistry() []FuncDef {
 			Description: "Найти задачи без историй, сгруппировать по сходству и предложить подходящие истории",
 			Params: []Param{
 				{Name: "project", Type: "multicheck", Label: "Проекты", Required: true, Options: []string{"ECPSKL", "ECPTRANSIT"}},
+				{Name: "mode", Type: "select", Label: "Алгоритм", Default: "tfidf", Options: []string{"tfidf", "llm"}},
 			},
 			Runner: RunGroupOrphans,
 		},
