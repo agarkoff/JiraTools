@@ -171,7 +171,6 @@ export default function FunctionPanel({ func: fn, jiraUrl }: Props) {
         isRunning={isRunning}
         progress={progress}
         error={error}
-        funcName={fn.name}
         jiraUrl={jiraUrl}
       />
     </div>

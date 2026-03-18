@@ -13,7 +13,6 @@ interface Props {
   isRunning: boolean;
   progress: { current: number; total: number } | null;
   error: string | null;
-  funcName?: string;
   jiraUrl?: string;
 }
 
@@ -104,7 +103,7 @@ function ResultTable({ table, jiraUrl }: { table: TableData; jiraUrl?: string })
   );
 }
 
-export default function OutputConsole({ lines, tables, files, gantt, isRunning, progress, error, funcName, jiraUrl }: Props) {
+export default function OutputConsole({ lines, tables, files, gantt, isRunning, progress, error, jiraUrl }: Props) {
   const [selectedGroup, setSelectedGroup] = useState<Record<string, string>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
