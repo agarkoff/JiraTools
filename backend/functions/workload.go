@@ -367,10 +367,23 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 			}
 		}
 
-		// Для каждой просроченной важной задачи ищем непросроченную менее важную
+		// Для каждой просроченной важной задачи ищем непросроченную менее важную,
+		// которая запланирована ДО дедлайна важной задачи (т.е. реально крадёт время)
 		for _, hi := range overdueTasks {
+			hiDue, err := time.Parse("2006-01-02", hi.DueDate)
+			if err != nil {
+				continue
+			}
 			for _, lo := range okTasks {
-				if hi.PriorityID < lo.PriorityID {
+				if hi.PriorityID >= lo.PriorityID {
+					continue
+				}
+				// Менее важная задача запланирована до дедлайна важной?
+				loStart, err := time.Parse("2006-01-02", lo.Start)
+				if err != nil {
+					continue
+				}
+				if loStart.Before(hiDue) {
 					violations = append(violations, violation{
 						user:   gu.Name,
 						hiKey:  hi.Key,
