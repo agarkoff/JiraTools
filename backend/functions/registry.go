@@ -108,6 +108,15 @@ func GetRegistry() []FuncDef {
 			Runner: RunNoFixVersion,
 		},
 		{
+			ID:          "group-orphans",
+			Name:        "Группировка задач-сирот",
+			Description: "Найти задачи без историй, сгруппировать по сходству и предложить подходящие истории",
+			Params: []Param{
+				{Name: "project", Type: "multicheck", Label: "Проекты", Required: true, Options: []string{"ECPSKL", "ECPTRANSIT"}},
+			},
+			Runner: RunGroupOrphans,
+		},
+		{
 			ID:          "msproject",
 			Name:        "Экспорт в MS Project",
 			Description: "Экспорт иерархии Эпик → История → Задача в формат MS Project XML",

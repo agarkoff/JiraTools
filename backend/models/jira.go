@@ -38,6 +38,7 @@ type Priority struct {
 
 type IssueFields struct {
 	Summary      string           `json:"summary"`
+	Description  string           `json:"description"`
 	Status       Status           `json:"status"`
 	Priority     *Priority        `json:"priority"`
 	Creator      *User            `json:"creator"`
