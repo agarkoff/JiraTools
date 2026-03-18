@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as XLSX from 'xlsx';
-import type { TableData, FileData } from '../types/types';
+import type { TableData, FileData, GanttData } from '../types/types';
+import GanttChart from './GanttChart';
 
 const ISSUE_RE = /([A-Z][A-Z0-9]+-\d+)/g;
 
@@ -8,6 +9,7 @@ interface Props {
   lines: string[];
   tables: TableData[];
   files?: FileData[];
+  gantt?: GanttData | null;
   isRunning: boolean;
   progress: { current: number; total: number } | null;
   error: string | null;
@@ -102,7 +104,7 @@ function ResultTable({ table, jiraUrl }: { table: TableData; jiraUrl?: string })
   );
 }
 
-export default function OutputConsole({ lines, tables, files, isRunning, progress, error, funcName, jiraUrl }: Props) {
+export default function OutputConsole({ lines, tables, files, gantt, isRunning, progress, error, funcName, jiraUrl }: Props) {
   const [selectedGroup, setSelectedGroup] = useState<Record<string, string>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -177,6 +179,8 @@ export default function OutputConsole({ lines, tables, files, isRunning, progres
       {plainTables.map((table, ti) => (
         <ResultTable table={table} key={`plain-${ti}`} jiraUrl={jiraUrl} />
       ))}
+
+      {gantt && !isRunning && <GanttChart data={gantt} jiraUrl={jiraUrl} />}
 
       {Object.entries(groups).map(([group, groupTables]) => {
         const sel = selectedGroup[group] || groupTables[0]?.title || '';

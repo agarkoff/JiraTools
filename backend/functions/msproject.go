@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"jira-tools-web/calendar"
 	"jira-tools-web/jira"
 	"jira-tools-web/models"
 	"jira-tools-web/sse"
@@ -320,15 +321,7 @@ func exportMSProject(cfg models.JiraConfig, project, epicField string, out *sse.
 	}
 
 	subtractWorkDays := func(from time.Time, workDays int) time.Time {
-		t := from
-		for workDays > 0 {
-			t = t.AddDate(0, 0, -1)
-			wd := t.Weekday()
-			if wd != time.Saturday && wd != time.Sunday {
-				workDays--
-			}
-		}
-		return t
+		return calendar.SubtractWorkDays(from, workDays)
 	}
 
 	issueEstimate := func(issue models.Issue) int {

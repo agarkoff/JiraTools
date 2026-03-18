@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { FuncDef, TableData, FileData } from '../types/types';
+import type { FuncDef, TableData, FileData, GanttData } from '../types/types';
 import { runFunction, getFnParams, saveFnParams } from '../api/api';
 import ParamForm from './ParamForm';
 import OutputConsole from './OutputConsole';
@@ -34,6 +34,7 @@ export default function FunctionPanel({ func: fn, jiraUrl }: Props) {
   const [lines, setLines] = useState<string[]>([]);
   const [tables, setTables] = useState<TableData[]>([]);
   const [files, setFiles] = useState<FileData[]>([]);
+  const [gantt, setGantt] = useState<GanttData | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +61,7 @@ export default function FunctionPanel({ func: fn, jiraUrl }: Props) {
     setLines([]);
     setTables([]);
     setFiles([]);
+    setGantt(null);
     setError(null);
     setProgress(null);
     setIsRunning(true);
@@ -80,6 +82,9 @@ export default function FunctionPanel({ func: fn, jiraUrl }: Props) {
         },
         onFile: (file) => {
           setFiles(prev => [...prev, file]);
+        },
+        onGantt: (data) => {
+          setGantt(data);
         },
         onError: (msg) => {
           setError(msg);
@@ -153,6 +158,7 @@ export default function FunctionPanel({ func: fn, jiraUrl }: Props) {
         lines={lines}
         tables={tables}
         files={files}
+        gantt={gantt}
         isRunning={isRunning}
         progress={progress}
         error={error}

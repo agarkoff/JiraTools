@@ -448,3 +448,194 @@
 .issue-link:hover {
   text-decoration: underline;
 }
+
+/* Gantt chart */
+.gantt {
+  margin-top: 20px;
+}
+
+.gantt-section {
+  margin-bottom: 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.gantt-user-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.gantt-user-label {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1e293b;
+}
+
+.gantt-user-hours {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.gantt-verdict {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.gantt-verdict.good {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.gantt-verdict.bad {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.gantt-scroll {
+  overflow-x: auto;
+}
+
+.gantt-body {
+  position: relative;
+}
+
+/* Shared row layout: fixed key column + flexible timeline */
+.gantt-row {
+  display: flex;
+  align-items: center;
+  height: 30px;
+}
+
+.gantt-key-col {
+  width: 120px;
+  min-width: 120px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.gantt-key-col a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.gantt-key-col a:hover {
+  text-decoration: underline;
+}
+
+.gantt-timeline {
+  flex: 1;
+  position: relative;
+  height: 100%;
+}
+
+/* Date header row */
+.gantt-dates-row {
+  border-bottom: 1px solid #e2e8f0;
+  height: 26px;
+}
+
+.gantt-date-cell {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #64748b;
+  border-right: 1px solid #f1f5f9;
+  box-sizing: border-box;
+}
+
+.gantt-date-cell.weekend {
+  color: #cbd5e1;
+  background: #f1f5f9;
+}
+
+/* Task rows container — positions the background layer */
+.gantt-rows {
+  position: relative;
+}
+
+.gantt-rows .gantt-row {
+  border-bottom: 1px solid #f8fafc;
+}
+
+/* Background layer: weekends + today, aligned with timeline area */
+.gantt-bg {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.gantt-weekend {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: #f1f5f9;
+}
+
+.gantt-today {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #f59e0b;
+  opacity: 0.7;
+  z-index: 1;
+}
+
+/* Task bars */
+.gantt-bar {
+  position: absolute;
+  top: 5px;
+  height: 20px;
+  border-radius: 3px;
+  min-width: 4px;
+  z-index: 1;
+}
+
+.gantt-bar {
+  background: #3b82f6;
+}
+
+.gantt-bar.overdue {
+  background: repeating-linear-gradient(
+    -45deg,
+    #ef4444,
+    #ef4444 4px,
+    #dc2626 4px,
+    #dc2626 8px
+  );
+}
+
+.gantt-due {
+  position: absolute;
+  top: 7px;
+  width: 8px;
+  height: 8px;
+  transform: translateX(-4px) rotate(45deg);
+  border: 2px solid #16a34a;
+  background: #fff;
+  z-index: 2;
+}
+
+.gantt-due.overdue {
+  border-color: #dc2626;
+}

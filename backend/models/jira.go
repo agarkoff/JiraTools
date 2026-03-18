@@ -31,9 +31,15 @@ type TimeTracking struct {
 	TimeSpentSeconds        int `json:"timeSpentSeconds"`
 }
 
+type Priority struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type IssueFields struct {
 	Summary      string           `json:"summary"`
 	Status       Status           `json:"status"`
+	Priority     *Priority        `json:"priority"`
 	Creator      *User            `json:"creator"`
 	Assignee     *User            `json:"assignee"`
 	Parent       *ParentRef       `json:"parent"`

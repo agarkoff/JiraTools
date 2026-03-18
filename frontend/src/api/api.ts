@@ -1,4 +1,4 @@
-import type { FuncDef, Run, RunOutputLine, TableData, FileData } from '../types/types';
+import type { FuncDef, Run, RunOutputLine, TableData, FileData, GanttData } from '../types/types';
 
 const API = '/api';
 
@@ -80,6 +80,7 @@ export interface SSECallbacks {
   onProgress?: (current: number, total: number) => void;
   onTable?: (table: TableData) => void;
   onFile?: (file: FileData) => void;
+  onGantt?: (data: GanttData) => void;
   onCompleted?: (runId: number) => void;
   onError?: (message: string) => void;
 }
@@ -141,6 +142,9 @@ export async function runFunction(
           break;
         case 'file':
           callbacks.onFile?.(data as FileData);
+          break;
+        case 'gantt':
+          callbacks.onGantt?.(data as GanttData);
           break;
         case 'error':
           callbacks.onError?.(data.message);

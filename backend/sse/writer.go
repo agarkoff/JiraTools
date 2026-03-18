@@ -123,6 +123,10 @@ func (s *Writer) SendGroupedTable(title, group string, headers []string, rows []
 	s.sendEvent("table", data)
 }
 
+func (s *Writer) SendGantt(data interface{}) {
+	s.sendEvent("gantt", data)
+}
+
 func (s *Writer) SendFile(filename, content string) {
 	s.sendEvent("file", map[string]string{
 		"filename": filename,

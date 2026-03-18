@@ -51,3 +51,31 @@ export interface FileData {
   filename: string;
   content: string;
 }
+
+export interface GanttTask {
+  key: string;
+  summary: string;
+  start: string;
+  end: string;
+  due_date?: string;
+  estimate_hours: number;
+  overdue: boolean;
+  status: string;
+  priority_id: string;
+  priority_name: string;
+}
+
+export interface GanttUser {
+  name: string;
+  tasks: GanttTask[];
+  overloaded: boolean;
+  total_hours: number;
+}
+
+export interface GanttData {
+  users: GanttUser[];
+  date_start: string;
+  date_end: string;
+  today: string;
+  non_working_days?: string[];
+}
