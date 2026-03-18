@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { GanttData } from '../types/types';
 
 interface Props {
@@ -63,11 +63,17 @@ export default function GanttChart({ data, jiraUrl }: Props) {
   const todayPct = pct(data.today);
   const minTimelineWidth = Math.max(400, totalDays * 38);
 
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  const toggle = (name: string) =>
+    setCollapsed(prev => ({ ...prev, [name]: !prev[name] }));
+
   return (
     <div className="gantt">
       {data.users.map(user => (
         <div key={user.name} className="gantt-section">
-          <div className="gantt-user-header">
+          <div className="gantt-user-header" onClick={() => toggle(user.name)}>
+            <span className={`gantt-toggle ${collapsed[user.name] ? 'collapsed' : ''}`} />
             <span className="gantt-user-label">{user.name}</span>
             <span className="gantt-user-hours">{user.total_hours.toFixed(0)}ч</span>
             {user.tasks.length > 0 && (
@@ -76,66 +82,68 @@ export default function GanttChart({ data, jiraUrl }: Props) {
               </span>
             )}
           </div>
-          <div className="gantt-scroll">
-            <div className="gantt-body" style={{ minWidth: minTimelineWidth + KEY_COL }}>
-              {/* Date header row — same flex layout as task rows */}
-              <div className="gantt-row gantt-dates-row">
-                <div className="gantt-key-col" />
-                <div className="gantt-timeline">
-                  {days.map((d, i) => (
-                    <div
-                      key={i}
-                      className={`gantt-date-cell ${isNonWorking(d) ? 'weekend' : ''}`}
-                      style={{ left: `${(i / totalDays) * 100}%`, width: `${dayPct}%` }}
-                    >
-                      {fmtDate(d)}
+          {!collapsed[user.name] && (
+            <div className="gantt-scroll">
+              <div className="gantt-body" style={{ minWidth: minTimelineWidth + KEY_COL }}>
+                {/* Date header row — same flex layout as task rows */}
+                <div className="gantt-row gantt-dates-row">
+                  <div className="gantt-key-col" />
+                  <div className="gantt-timeline">
+                    {days.map((d, i) => (
+                      <div
+                        key={i}
+                        className={`gantt-date-cell ${isNonWorking(d) ? 'weekend' : ''}`}
+                        style={{ left: `${(i / totalDays) * 100}%`, width: `${dayPct}%` }}
+                      >
+                        {fmtDate(d)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Task rows */}
+                <div className="gantt-rows">
+                  {/* Background: weekends + today (once, full height, aligned to timeline) */}
+                  <div className="gantt-bg" style={{ left: KEY_COL }}>
+                    {days.map((d, di) => isNonWorking(d) ? (
+                      <div key={di} className="gantt-weekend"
+                        style={{ left: `${(di / totalDays) * 100}%`, width: `${dayPct}%` }} />
+                    ) : null)}
+                    <div className="gantt-today" style={{ left: `${todayPct + dayPct * 0.5}%` }} />
+                  </div>
+
+                  {user.tasks.map((task, ti) => (
+                    <div key={ti} className="gantt-row">
+                      <div className="gantt-key-col">
+                        {jiraUrl ? (
+                          <a href={`${jiraUrl}/browse/${task.key}`} target="_blank" rel="noopener noreferrer">
+                            {task.key}
+                          </a>
+                        ) : task.key}
+                      </div>
+                      <div className="gantt-timeline">
+                        <div
+                          className={`gantt-bar ${task.overdue ? 'overdue' : ''}`}
+                          style={{
+                            left: `${pct(task.start)}%`,
+                            width: `${Math.max(barWidth(task.start, task.end), dayPct * 0.5)}%`,
+                          }}
+                          title={`${task.key}: ${task.summary}\nПриоритет: ${task.priority_name || '—'}\nОценка: ${task.estimate_hours > 0 ? task.estimate_hours.toFixed(0) + 'ч' : 'нет'}\nСрок: ${task.due_date || 'нет'}\nСтатус: ${task.status}`}
+                        />
+                        {task.due_date && (
+                          <div
+                            className={`gantt-due ${task.overdue ? 'overdue' : ''}`}
+                            style={{ left: `${pct(task.due_date) + dayPct * 0.5}%` }}
+                            title={`Срок: ${task.due_date}`}
+                          />
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
-
-              {/* Task rows */}
-              <div className="gantt-rows">
-                {/* Background: weekends + today (once, full height, aligned to timeline) */}
-                <div className="gantt-bg" style={{ left: KEY_COL }}>
-                  {days.map((d, di) => isNonWorking(d) ? (
-                    <div key={di} className="gantt-weekend"
-                      style={{ left: `${(di / totalDays) * 100}%`, width: `${dayPct}%` }} />
-                  ) : null)}
-                  <div className="gantt-today" style={{ left: `${todayPct + dayPct * 0.5}%` }} />
-                </div>
-
-                {user.tasks.map((task, ti) => (
-                  <div key={ti} className="gantt-row">
-                    <div className="gantt-key-col">
-                      {jiraUrl ? (
-                        <a href={`${jiraUrl}/browse/${task.key}`} target="_blank" rel="noopener noreferrer">
-                          {task.key}
-                        </a>
-                      ) : task.key}
-                    </div>
-                    <div className="gantt-timeline">
-                      <div
-                        className={`gantt-bar ${task.overdue ? 'overdue' : ''}`}
-                        style={{
-                          left: `${pct(task.start)}%`,
-                          width: `${Math.max(barWidth(task.start, task.end), dayPct * 0.5)}%`,
-                        }}
-                        title={`${task.key}: ${task.summary}\nПриоритет: ${task.priority_name || '—'}\nОценка: ${task.estimate_hours > 0 ? task.estimate_hours.toFixed(0) + 'ч' : 'нет'}\nСрок: ${task.due_date || 'нет'}\nСтатус: ${task.status}`}
-                      />
-                      {task.due_date && (
-                        <div
-                          className={`gantt-due ${task.overdue ? 'overdue' : ''}`}
-                          style={{ left: `${pct(task.due_date) + dayPct * 0.5}%` }}
-                          title={`Срок: ${task.due_date}`}
-                        />
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
-          </div>
+          )}
         </div>
       ))}
     </div>
