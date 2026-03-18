@@ -42,7 +42,7 @@ func Generate(cfg Config, prompt string) (string, error) {
 		Stream: false,
 	}
 	reqBody.Options.Temperature = 0.1
-	reqBody.Options.NumCtx = 131072
+	reqBody.Options.NumCtx = 32768
 
 	data, err := json.Marshal(reqBody)
 	if err != nil {
