@@ -3,7 +3,6 @@ package functions
 import (
 	"fmt"
 	"strings"
-	"text/tabwriter"
 
 	"jira-tools-web/jira"
 	"jira-tools-web/models"
@@ -48,6 +47,7 @@ func RunCheckLinks(cfg models.JiraConfig, params map[string]string, out *sse.Wri
 	type mismatch struct {
 		taskKey  string
 		taskName string
+		author   string
 		storyKey string
 		linkID   string
 		linkType string
@@ -94,6 +94,7 @@ func RunCheckLinks(cfg models.JiraConfig, params map[string]string, out *sse.Wri
 				mismatches = append(mismatches, mismatch{
 					taskKey:  issue.Key,
 					taskName: issue.Fields.Summary,
+					author:   jira.FormatAuthor(issue),
 					storyKey: storyKey,
 					linkID:   link.ID,
 					linkType: link.Type.Name,
@@ -111,13 +112,12 @@ func RunCheckLinks(cfg models.JiraConfig, params map[string]string, out *sse.Wri
 		return nil
 	}
 
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ЗАДАЧА\tИСТОРИЯ\tТИП СВЯЗИ\tОПИСАНИЕ\tНАЗВАНИЕ ЗАДАЧИ")
-	fmt.Fprintln(w, "------\t-------\t---------\t---------\t---------------")
+	headers := []string{"Автор", "Задача", "История", "Тип связи", "Описание", "Название задачи"}
+	rows := make([][]string, 0, len(mismatches))
 	for _, m := range mismatches {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", m.taskKey, m.storyKey, m.linkType, m.linkDesc, m.taskName)
+		rows = append(rows, []string{m.author, m.taskKey, m.storyKey, m.linkType, m.linkDesc, m.taskName})
 	}
-	w.Flush()
+	out.SendTable(headers, rows)
 
 	// Fix links
 	if fixParentof {
