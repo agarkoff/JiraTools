@@ -19,13 +19,16 @@ func (c Config) IsConfigured() bool {
 	return c.URL != "" && c.Model != ""
 }
 
+type ollamaOptions struct {
+	Temperature float64 `json:"temperature"`
+	NumCtx      int     `json:"num_ctx"`
+}
+
 type ollamaRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
-	Stream bool   `json:"stream"`
-	Options struct {
-		Temperature float64 `json:"temperature"`
-	} `json:"options"`
+	Model   string        `json:"model"`
+	Prompt  string        `json:"prompt"`
+	Stream  bool          `json:"stream"`
+	Options ollamaOptions `json:"options"`
 }
 
 type ollamaResponse struct {
@@ -39,6 +42,7 @@ func Generate(cfg Config, prompt string) (string, error) {
 		Stream: false,
 	}
 	reqBody.Options.Temperature = 0.1
+	reqBody.Options.NumCtx = 131072
 
 	data, err := json.Marshal(reqBody)
 	if err != nil {
