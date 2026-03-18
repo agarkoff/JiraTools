@@ -102,6 +102,34 @@ func (s *Writer) writeLine(text string) {
 	}
 }
 
+func (s *Writer) SendTable(headers []string, rows [][]string) {
+	s.sendEvent("table", map[string]interface{}{
+		"headers": headers,
+		"rows":    rows,
+	})
+}
+
+func (s *Writer) SendGroupedTable(title, group string, headers []string, rows [][]string) {
+	data := map[string]interface{}{
+		"headers": headers,
+		"rows":    rows,
+	}
+	if title != "" {
+		data["title"] = title
+	}
+	if group != "" {
+		data["group"] = group
+	}
+	s.sendEvent("table", data)
+}
+
+func (s *Writer) SendFile(filename, content string) {
+	s.sendEvent("file", map[string]string{
+		"filename": filename,
+		"content":  content,
+	})
+}
+
 func (s *Writer) RunID() int {
 	return s.runID
 }

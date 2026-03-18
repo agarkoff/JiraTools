@@ -15,7 +15,10 @@ import (
 )
 
 func RunChurn(cfg models.JiraConfig, params map[string]string, out *sse.Writer) error {
-	project := params["project"]
+	projects := strings.Split(params["project"], ",")
+	for i := range projects {
+		projects[i] = strings.TrimSpace(projects[i])
+	}
 	repoPath := params["repo_path"]
 	if repoPath == "" {
 		repoPath = "."
@@ -25,7 +28,11 @@ func RunChurn(cfg models.JiraConfig, params map[string]string, out *sse.Writer) 
 		limit = v
 	}
 
-	pattern := regexp.MustCompile(fmt.Sprintf(`(%s-\d+)`, regexp.QuoteMeta(project)))
+	parts := make([]string, len(projects))
+	for i, p := range projects {
+		parts[i] = regexp.QuoteMeta(p)
+	}
+	pattern := regexp.MustCompile(fmt.Sprintf(`(%s-\d+)`, strings.Join(parts, "|")))
 
 	cmd := exec.Command("git", "log", "--numstat", "--pretty=format:COMMIT:%s")
 	cmd.Dir = repoPath
@@ -108,7 +115,7 @@ func RunChurn(cfg models.JiraConfig, params map[string]string, out *sse.Writer) 
 		}
 	}
 
-	out.Printf("Проект: %s | Репозиторий: %s | Задач с изменениями: %d", project, repoPath, len(churnMap))
+	out.Printf("Проекты: %s | Репозиторий: %s | Задач с изменениями: %d", strings.Join(projects, ", "), repoPath, len(churnMap))
 
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "KEY\tКОММИТЫ\t+ДОБАВЛЕНО\t-УДАЛЕНО\tИТОГО\tНАЗВАНИЕ")

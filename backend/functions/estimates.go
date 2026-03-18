@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"jira-tools-web/jira"
 	"jira-tools-web/models"
@@ -226,14 +225,13 @@ func RunEstimates(cfg models.JiraConfig, params map[string]string, out *sse.Writ
 	out.Printf("Проекты: %s | Всего задач: %d | Пользователей: %d%s\n",
 		strings.Join(projects, ", "), len(allTasks), len(logins), mode)
 
-	spentLabel := "ЗАТРАЧЕНО (ч)"
+	spentLabel := "Затрачено (ч)"
 	if useWorklogs {
-		spentLabel = "ЛИЧНО (ч)"
+		spentLabel = "Лично (ч)"
 	}
 
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "ПОЛЬЗОВАТЕЛЬ\tЗАДАЧ\tС ОЦЕНКОЙ\tС ЛОГОМ\tОЦЕНКА (ч)\t%s\tРАЗНИЦА (ч)\n", spentLabel)
-	fmt.Fprintln(w, "------------\t-----\t---------\t-------\t----------\t--------------\t-----------")
+	headers := []string{"Пользователь", "Задач", "С оценкой", "С логом", "Оценка (ч)", spentLabel, "Разница (ч)"}
+	rows := make([][]string, 0, len(logins)+1)
 
 	totalTasks := 0
 	totalWithEst := 0
@@ -262,14 +260,26 @@ func RunEstimates(cfg models.JiraConfig, params map[string]string, out *sse.Writ
 		totalWithSpent += withSpent
 		totalEst += sumEst
 		totalSpent += sumSpent
-		fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%.1f\t%.1f\t%.1f\n",
+		rows = append(rows, []string{
 			jira.FormatDisplayName(pe.displayName),
-			len(pe.tasks), withEst, withSpent,
-			sumEst, sumSpent, sumSpent-sumEst)
+			fmt.Sprintf("%d", len(pe.tasks)),
+			fmt.Sprintf("%d", withEst),
+			fmt.Sprintf("%d", withSpent),
+			fmt.Sprintf("%.1f", sumEst),
+			fmt.Sprintf("%.1f", sumSpent),
+			fmt.Sprintf("%.1f", sumSpent-sumEst),
+		})
 	}
-	fmt.Fprintf(w, "ИТОГО\t%d\t%d\t%d\t%.1f\t%.1f\t%.1f\n",
-		totalTasks, totalWithEst, totalWithSpent, totalEst, totalSpent, totalSpent-totalEst)
-	w.Flush()
+	rows = append(rows, []string{
+		"ИТОГО",
+		fmt.Sprintf("%d", totalTasks),
+		fmt.Sprintf("%d", totalWithEst),
+		fmt.Sprintf("%d", totalWithSpent),
+		fmt.Sprintf("%.1f", totalEst),
+		fmt.Sprintf("%.1f", totalSpent),
+		fmt.Sprintf("%.1f", totalSpent-totalEst),
+	})
+	out.SendTable(headers, rows)
 
 	return nil
 }

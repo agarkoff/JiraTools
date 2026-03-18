@@ -86,6 +86,18 @@ func main() {
 		}
 	})
 
+	// Function params (saved state)
+	mux.HandleFunc("/api/fn-params/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			configH.GetFnParams(w, r)
+		case "PUT":
+			configH.SetFnParams(w, r)
+		default:
+			http.Error(w, "method not allowed", 405)
+		}
+	})
+
 	// Functions
 	mux.HandleFunc("/api/functions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {

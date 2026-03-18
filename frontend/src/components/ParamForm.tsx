@@ -5,14 +5,45 @@ interface Props {
   values: Record<string, string>;
   onChange: (name: string, value: string) => void;
   disabled: boolean;
+  inline?: boolean;
 }
 
-export default function ParamForm({ params, values, onChange, disabled }: Props) {
+export default function ParamForm({ params, values, onChange, disabled, inline }: Props) {
   return (
-    <div className="param-form">
+    <div className={inline ? 'param-form-inline' : 'param-form'}>
       {params.map(p => (
         <div className="form-group" key={p.name}>
-          {p.type === 'boolean' ? (
+          {p.type === 'multicheck' ? (
+            <>
+              <label>
+                {p.label}
+                {p.required && <span style={{ color: 'var(--danger)' }}> *</span>}
+              </label>
+              <div className="multicheck-row">
+                {p.options?.map(opt => {
+                  const selected = (values[p.name] || '').split(',').filter(Boolean);
+                  const checked = selected.includes(opt);
+                  return (
+                    <div className="checkbox-row" key={opt}>
+                      <input
+                        type="checkbox"
+                        id={`${p.name}_${opt}`}
+                        checked={checked}
+                        onChange={() => {
+                          const next = checked
+                            ? selected.filter(v => v !== opt)
+                            : [...selected, opt];
+                          onChange(p.name, next.join(','));
+                        }}
+                        disabled={disabled}
+                      />
+                      <label htmlFor={`${p.name}_${opt}`}>{opt}</label>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : p.type === 'boolean' ? (
             <div className="checkbox-row">
               <input
                 type="checkbox"

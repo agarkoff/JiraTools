@@ -1,6 +1,6 @@
 export interface FuncParam {
   name: string;
-  type: 'string' | 'number' | 'boolean' | 'select' | 'textarea';
+  type: 'string' | 'number' | 'boolean' | 'select' | 'textarea' | 'multicheck';
   label: string;
   required: boolean;
   default?: string;
@@ -12,6 +12,7 @@ export interface FuncDef {
   name: string;
   description: string;
   params: FuncParam[];
+  layout?: string;
 }
 
 export interface Run {
@@ -37,4 +38,16 @@ export interface SSEOutputEvent {
 export interface SSEProgressEvent {
   current: number;
   total: number;
+}
+
+export interface TableData {
+  headers: string[];
+  rows: string[][];
+  title?: string;
+  group?: string;
+}
+
+export interface FileData {
+  filename: string;
+  content: string;
 }

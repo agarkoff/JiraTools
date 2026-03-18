@@ -3,7 +3,7 @@ package functions
 import (
 	"fmt"
 	"sort"
-	"text/tabwriter"
+	"strings"
 
 	"jira-tools-web/jira"
 	"jira-tools-web/models"
@@ -11,22 +11,27 @@ import (
 )
 
 func RunOrphans(cfg models.JiraConfig, params map[string]string, out *sse.Writer) error {
-	project := params["project"]
-	jql := fmt.Sprintf(`project = "%s" AND issuetype = "Задача"`, project)
+	projects := strings.Split(params["project"], ",")
+	for i := range projects {
+		projects[i] = strings.TrimSpace(projects[i])
+	}
 
 	var allIssues []models.Issue
-	startAt := 0
-	for {
-		result, err := jira.SearchIssuesDefault(cfg, jql, startAt)
-		if err != nil {
-			return fmt.Errorf("Ошибка: %v", err)
+	for _, project := range projects {
+		jql := fmt.Sprintf(`project = "%s" AND issuetype = "Задача"`, project)
+		startAt := 0
+		for {
+			result, err := jira.SearchIssuesDefault(cfg, jql, startAt)
+			if err != nil {
+				return fmt.Errorf("Ошибка: %v", err)
+			}
+			allIssues = append(allIssues, result.Issues...)
+			out.SendProgress(len(allIssues), result.Total)
+			if startAt+result.MaxResults >= result.Total {
+				break
+			}
+			startAt += result.MaxResults
 		}
-		allIssues = append(allIssues, result.Issues...)
-		out.SendProgress(len(allIssues), result.Total)
-		if startAt+result.MaxResults >= result.Total {
-			break
-		}
-		startAt += result.MaxResults
 	}
 
 	var orphans []models.Issue
@@ -48,20 +53,24 @@ func RunOrphans(cfg models.JiraConfig, params map[string]string, out *sse.Writer
 		return a < b
 	})
 
-	out.Printf("Проект: %s | Всего задач: %d | Без привязки к Историям: %d\n", project, len(allIssues), len(orphans))
+	out.Printf("Проекты: %s | Всего задач: %d | Без привязки к Историям: %d", strings.Join(projects, ", "), len(allIssues), len(orphans))
 
 	if len(orphans) == 0 {
 		out.Printf("Все задачи привязаны к Историям.")
 		return nil
 	}
 
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "АВТОР\tKEY\tСТАТУС\tНАЗВАНИЕ")
-	fmt.Fprintln(w, "-----\t---\t------\t--------")
+	headers := []string{"Автор", "Key", "Статус", "Название"}
+	rows := make([][]string, 0, len(orphans))
 	for _, issue := range orphans {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", jira.FormatAuthor(issue), issue.Key, issue.Fields.Status.Name, issue.Fields.Summary)
+		rows = append(rows, []string{
+			jira.FormatAuthor(issue),
+			issue.Key,
+			issue.Fields.Status.Name,
+			issue.Fields.Summary,
+		})
 	}
-	w.Flush()
+	out.SendTable(headers, rows)
 
 	return nil
 }

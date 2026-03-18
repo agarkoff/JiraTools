@@ -105,6 +105,47 @@ func (h *ConfigHandler) TestConnection(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "ok", "message": "Подключение успешно"})
 }
 
+func (h *ConfigHandler) GetFnParams(w http.ResponseWriter, r *http.Request) {
+	funcID := strings.TrimPrefix(r.URL.Path, "/api/fn-params/")
+	if funcID == "" {
+		http.Error(w, "function id required", 400)
+		return
+	}
+	cfg, err := models.GetConfig(h.DB)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	key := "fn-params-" + funcID
+	val, ok := cfg[key]
+	if !ok {
+		writeJSON(w, map[string]string{})
+		return
+	}
+	// val is JSON string, write it raw
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(val))
+}
+
+func (h *ConfigHandler) SetFnParams(w http.ResponseWriter, r *http.Request) {
+	funcID := strings.TrimPrefix(r.URL.Path, "/api/fn-params/")
+	if funcID == "" {
+		http.Error(w, "function id required", 400)
+		return
+	}
+	var body map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", 400)
+		return
+	}
+	raw, _ := json.Marshal(body)
+	if err := models.SetConfig(h.DB, "fn-params-"+funcID, string(raw)); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
 func writeJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(data)

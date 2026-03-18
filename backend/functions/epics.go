@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"text/tabwriter"
+	"strings"
 
 	"jira-tools-web/jira"
 	"jira-tools-web/models"
@@ -21,7 +21,10 @@ type epicTaskInfo struct {
 }
 
 func RunEpics(cfg models.JiraConfig, params map[string]string, out *sse.Writer) error {
-	project := params["project"]
+	projects := strings.Split(params["project"], ",")
+	for i := range projects {
+		projects[i] = strings.TrimSpace(projects[i])
+	}
 	epicField := params["epic_field"]
 	if epicField == "" {
 		epicField = "customfield_10109"
@@ -30,32 +33,38 @@ func RunEpics(cfg models.JiraConfig, params map[string]string, out *sse.Writer) 
 
 	// 1. Load all epics for name lookup
 	epicNames := make(map[string]string)
-	epicJQL := fmt.Sprintf(`project = "%s" AND issuetype = "Epic"`, project)
-	startAt := 0
-	for {
-		result, err := jira.SearchIssues(cfg, epicJQL, "key,summary", startAt)
-		if err != nil {
-			return fmt.Errorf("ошибка загрузки эпиков: %v", err)
+	for _, project := range projects {
+		epicJQL := fmt.Sprintf(`project = "%s" AND issuetype = "Epic"`, project)
+		startAt := 0
+		for {
+			result, err := jira.SearchIssues(cfg, epicJQL, "key,summary", startAt)
+			if err != nil {
+				return fmt.Errorf("ошибка загрузки эпиков: %v", err)
+			}
+			for _, issue := range result.Issues {
+				epicNames[issue.Key] = issue.Fields.Summary
+			}
+			if startAt+result.MaxResults >= result.Total {
+				break
+			}
+			startAt += result.MaxResults
 		}
-		for _, issue := range result.Issues {
-			epicNames[issue.Key] = issue.Fields.Summary
-		}
-		if startAt+result.MaxResults >= result.Total {
-			break
-		}
-		startAt += result.MaxResults
 	}
 	out.Printf("Загружено эпиков: %d", len(epicNames))
 
 	// 2. Load all tasks
-	jql := fmt.Sprintf(`project = "%s" AND issuetype = "Задача"`, project)
+	projectClauses := make([]string, len(projects))
+	for i, p := range projects {
+		projectClauses[i] = fmt.Sprintf(`project = "%s"`, p)
+	}
+	jql := fmt.Sprintf(`(%s) AND issuetype = "Задача"`, strings.Join(projectClauses, " OR "))
 	fields := "key,summary,status,parent"
 	if epicField != "" {
 		fields += "," + epicField
 	}
 
 	var tasks []epicTaskInfo
-	startAt = 0
+	startAt := 0
 	for {
 		body, err := jira.DoSearch(cfg, jql, fields, startAt)
 		if err != nil {
@@ -123,8 +132,8 @@ func RunEpics(cfg models.JiraConfig, params map[string]string, out *sse.Writer) 
 		}
 	}
 
-	out.Printf("Проект: %s | Всего задач: %d | С эпиком: %d | Без эпика: %d",
-		project, len(tasks), withEpic, len(tasks)-withEpic)
+	out.Printf("Проекты: %s | Всего задач: %d | С эпиком: %d | Без эпика: %d",
+		strings.Join(projects, ", "), len(tasks), withEpic, len(tasks)-withEpic)
 
 	// Sort by issue number
 	sort.Slice(tasks, func(i, j int) bool {
@@ -133,17 +142,15 @@ func RunEpics(cfg models.JiraConfig, params map[string]string, out *sse.Writer) 
 
 	// Output table (only tasks with epic)
 	if withEpic > 0 {
-		w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "KEY\tСТАТУС\tЭПИК\tНАЗВАНИЕ ЭПИКА\tНАЗВАНИЕ ЗАДАЧИ")
-		fmt.Fprintln(w, "---\t------\t----\t--------------\t---------------")
+		headers := []string{"Key", "Статус", "Эпик", "Название эпика", "Название задачи"}
+		rows := make([][]string, 0, withEpic)
 		for _, t := range tasks {
 			if t.epicKey == "" {
 				continue
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				t.key, t.status, t.epicKey, t.epicName, t.summary)
+			rows = append(rows, []string{t.key, t.status, t.epicKey, t.epicName, t.summary})
 		}
-		w.Flush()
+		out.SendTable(headers, rows)
 	} else {
 		out.Printf("Задач с эпиком не найдено.")
 	}

@@ -19,6 +19,7 @@ type FuncDef struct {
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
 	Params      []Param `json:"params"`
+	Layout      string  `json:"layout,omitempty"` // "inline" for single-row layout
 	Runner      func(cfg models.JiraConfig, params map[string]string, out *sse.Writer) error `json:"-"`
 }
 
@@ -29,7 +30,7 @@ func GetRegistry() []FuncDef {
 			Name:        "Задачи-сироты",
 			Description: "Найти задачи типа Задача, не привязанные к Историям",
 			Params: []Param{
-				{Name: "project", Type: "string", Label: "Ключ проекта", Required: true},
+				{Name: "project", Type: "multicheck", Label: "Проекты", Required: true, Options: []string{"ECPSKL", "ECPTRANSIT"}},
 			},
 			Runner: RunOrphans,
 		},
@@ -37,9 +38,10 @@ func GetRegistry() []FuncDef {
 			ID:          "workload",
 			Name:        "Загрузка",
 			Description: "Показать загрузку пользователей с учётом оценок времени",
+			Layout:      "inline",
 			Params: []Param{
-				{Name: "project", Type: "string", Label: "Ключи проектов (через запятую)", Required: true},
-				{Name: "period", Type: "select", Label: "Период", Default: "all", Options: []string{"all", "week", "month"}},
+				{Name: "project", Type: "multicheck", Label: "Проекты", Required: true, Options: []string{"ECPSKL", "ECPTRANSIT"}},
+				{Name: "period", Type: "select", Label: "Период", Default: "Все", Options: []string{"Все", "Неделя", "Месяц"}},
 			},
 			Runner: RunWorkload,
 		},
@@ -48,7 +50,7 @@ func GetRegistry() []FuncDef {
 			Name:        "Анализ оценок",
 			Description: "Анализ точности оценок времени по пользователям",
 			Params: []Param{
-				{Name: "project", Type: "string", Label: "Ключи проектов (через запятую)", Required: true},
+				{Name: "project", Type: "multicheck", Label: "Проекты", Required: true, Options: []string{"ECPSKL", "ECPTRANSIT"}},
 				{Name: "worklogs", Type: "boolean", Label: "Использовать ворклоги для точного учёта", Default: "false"},
 			},
 			Runner: RunEstimates,
@@ -58,7 +60,7 @@ func GetRegistry() []FuncDef {
 			Name:        "Эпики",
 			Description: "Вывести задачи с привязкой к эпикам, при необходимости удалить",
 			Params: []Param{
-				{Name: "project", Type: "string", Label: "Ключ проекта", Required: true},
+				{Name: "project", Type: "multicheck", Label: "Проекты", Required: true, Options: []string{"ECPSKL", "ECPTRANSIT"}},
 				{Name: "epic_field", Type: "string", Label: "Поле Epic Link", Default: "customfield_10109"},
 				{Name: "remove_epic", Type: "boolean", Label: "Удалить эпик у задач", Default: "false"},
 			},
@@ -80,7 +82,7 @@ func GetRegistry() []FuncDef {
 			Name:        "Code Churn",
 			Description: "Анализ git-истории: задачи с наибольшим количеством изменений кода",
 			Params: []Param{
-				{Name: "project", Type: "string", Label: "Ключ проекта", Required: true},
+				{Name: "project", Type: "multicheck", Label: "Проекты", Required: true, Options: []string{"ECPSKL", "ECPTRANSIT"}},
 				{Name: "repo_path", Type: "string", Label: "Путь к git-репозиторию", Required: true},
 				{Name: "limit", Type: "number", Label: "Количество задач в топе", Default: "20"},
 			},
@@ -91,7 +93,7 @@ func GetRegistry() []FuncDef {
 			Name:        "Проверка связей",
 			Description: "Проверить что связи Задача→История имеют тип parentof",
 			Params: []Param{
-				{Name: "project", Type: "string", Label: "Ключи проектов (через запятую)", Required: true},
+				{Name: "project", Type: "multicheck", Label: "Проекты", Required: true, Options: []string{"ECPSKL", "ECPTRANSIT"}},
 				{Name: "fix_parentof", Type: "boolean", Label: "Исправить связи на parentof", Default: "false"},
 			},
 			Runner: RunCheckLinks,
@@ -101,9 +103,19 @@ func GetRegistry() []FuncDef {
 			Name:        "Без fixVersion",
 			Description: "Найти задачи с привязанными коммитами/MR из GitLab, но без fixVersion",
 			Params: []Param{
-				{Name: "project", Type: "string", Label: "Ключи проектов (через запятую)", Required: true},
+				{Name: "project", Type: "multicheck", Label: "Проекты", Required: true, Options: []string{"ECPSKL", "ECPTRANSIT"}},
 			},
 			Runner: RunNoFixVersion,
+		},
+		{
+			ID:          "msproject",
+			Name:        "Экспорт в MS Project",
+			Description: "Экспорт иерархии Эпик → История → Задача в формат MS Project XML",
+			Params: []Param{
+				{Name: "project", Type: "multicheck", Label: "Проекты", Required: true, Options: []string{"ECPSKL", "ECPTRANSIT"}},
+				{Name: "epic_field", Type: "string", Label: "Поле Epic Link", Default: "customfield_10109"},
+			},
+			Runner: RunMSProject,
 		},
 	}
 }

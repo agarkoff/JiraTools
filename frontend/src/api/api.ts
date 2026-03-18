@@ -1,4 +1,4 @@
-import type { FuncDef, Run, RunOutputLine } from '../types/types';
+import type { FuncDef, Run, RunOutputLine, TableData, FileData } from '../types/types';
 
 const API = '/api';
 
@@ -44,6 +44,15 @@ export async function deleteUser(login: string): Promise<void> {
   return fetchJson(`${API}/users/${encodeURIComponent(login)}`, { method: 'DELETE' });
 }
 
+// Function params (saved state)
+export async function getFnParams(funcId: string): Promise<Record<string, string>> {
+  return fetchJson(`${API}/fn-params/${funcId}`);
+}
+
+export async function saveFnParams(funcId: string, params: Record<string, string>): Promise<void> {
+  return fetchJson(`${API}/fn-params/${funcId}`, { method: 'PUT', body: JSON.stringify(params) });
+}
+
 // Functions
 export async function getFunctions(): Promise<FuncDef[]> {
   return fetchJson(`${API}/functions`);
@@ -69,6 +78,8 @@ export interface SSECallbacks {
   onStarted?: (runId: number) => void;
   onOutput?: (line: string, lineNum: number) => void;
   onProgress?: (current: number, total: number) => void;
+  onTable?: (table: TableData) => void;
+  onFile?: (file: FileData) => void;
   onCompleted?: (runId: number) => void;
   onError?: (message: string) => void;
 }
@@ -124,6 +135,12 @@ export async function runFunction(
           break;
         case 'completed':
           callbacks.onCompleted?.(data.run_id);
+          break;
+        case 'table':
+          callbacks.onTable?.(data as TableData);
+          break;
+        case 'file':
+          callbacks.onFile?.(data as FileData);
           break;
         case 'error':
           callbacks.onError?.(data.message);

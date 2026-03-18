@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"jira-tools-web/jira"
@@ -57,7 +56,7 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 	periodLabel := "все задачи"
 	now := time.Now()
 	switch period {
-	case "week":
+	case "Неделя", "week":
 		weekday := now.Weekday()
 		if weekday == time.Sunday {
 			weekday = 7
@@ -67,16 +66,14 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 		datePart := fmt.Sprintf(` AND duedate >= "%s" AND duedate <= "%s"`, monday.Format("2006-01-02"), sunday.Format("2006-01-02"))
 		jql += datePart
 		periodLabel = fmt.Sprintf("неделя (%s — %s)", monday.Format("02.01"), sunday.Format("02.01"))
-	case "month":
+	case "Месяц", "month":
 		firstDay := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 		lastDay := firstDay.AddDate(0, 1, -1)
 		datePart := fmt.Sprintf(` AND duedate >= "%s" AND duedate <= "%s"`, firstDay.Format("2006-01-02"), lastDay.Format("2006-01-02"))
 		jql += datePart
 		periodLabel = fmt.Sprintf("месяц (%s)", now.Format("01.2006"))
-	case "all":
-		// без фильтрации
 	default:
-		return fmt.Errorf("неизвестный период %q (допустимые: all, week, month)", period)
+		// "Все", "all" — без фильтрации
 	}
 
 	// Загружаем все задачи
@@ -128,50 +125,10 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 	// Заголовок
 	out.Printf("Проект: %s | Период: %s | Пользователей: %d", strings.Join(projects, ", "), periodLabel, len(cfg.Users))
 
-	// Детали по каждому пользователю
-	for _, login := range logins {
-		info := byUser[login]
-		shortName := jira.FormatDisplayName(info.displayName)
-		out.Printf("\n--- %s ---", shortName)
+	// Сводка (первой)
+	summaryHeaders := []string{"Пользователь", "Задач", "Оценка"}
+	summaryRows := make([][]string, 0, len(cfg.Users))
 
-		w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "KEY\tСТАТУС\tОЦЕНКА\tСРОК\tНАЗВАНИЕ")
-		fmt.Fprintln(w, "---\t------\t------\t----\t--------")
-		for _, issue := range info.issues {
-			est := 0
-			if issue.Fields.TimeTracking != nil {
-				est = issue.Fields.TimeTracking.OriginalEstimateSeconds
-			}
-			duedate := issue.Fields.DueDate
-			if duedate == "" {
-				duedate = "-"
-			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				issue.Key,
-				issue.Fields.Status.Name,
-				jira.FormatHours(est),
-				duedate,
-				issue.Fields.Summary,
-			)
-		}
-		w.Flush()
-		out.Printf("Итого: %d задач(и), %s", len(info.issues), jira.FormatHours(info.totalTime))
-	}
-
-	// Показать пользователей без задач
-	for _, u := range cfg.Users {
-		if _, ok := byUser[u]; !ok {
-			out.Printf("\n--- %s ---\nНет задач", u)
-		}
-	}
-
-	// Сводка
-	out.Printf("\n=== СВОДКА ===")
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ПОЛЬЗОВАТЕЛЬ\tЗАДАЧ\tОЦЕНКА")
-	fmt.Fprintln(w, "------------\t-----\t------")
-
-	// В сводке выводим всех пользователей из конфига
 	allLogins := make([]string, len(cfg.Users))
 	copy(allLogins, cfg.Users)
 	sort.Slice(allLogins, func(i, j int) bool {
@@ -190,12 +147,39 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 		info, ok := byUser[login]
 		if ok {
 			shortName := jira.FormatDisplayName(info.displayName)
-			fmt.Fprintf(w, "%s\t%d\t%s\n", shortName, len(info.issues), jira.FormatHours(info.totalTime))
+			summaryRows = append(summaryRows, []string{shortName, fmt.Sprintf("%d", len(info.issues)), jira.FormatHours(info.totalTime)})
 		} else {
-			fmt.Fprintf(w, "%s\t0\t-\n", login)
+			summaryRows = append(summaryRows, []string{login, "0", "-"})
 		}
 	}
-	w.Flush()
+	out.SendTable(summaryHeaders, summaryRows)
+
+	// Детали по каждому пользователю (grouped)
+	for _, login := range logins {
+		info := byUser[login]
+		shortName := jira.FormatDisplayName(info.displayName)
+
+		headers := []string{"Key", "Статус", "Оценка", "Срок", "Название"}
+		rows := make([][]string, 0, len(info.issues))
+		for _, issue := range info.issues {
+			est := 0
+			if issue.Fields.TimeTracking != nil {
+				est = issue.Fields.TimeTracking.OriginalEstimateSeconds
+			}
+			duedate := issue.Fields.DueDate
+			if duedate == "" {
+				duedate = "-"
+			}
+			rows = append(rows, []string{
+				issue.Key,
+				issue.Fields.Status.Name,
+				jira.FormatHours(est),
+				duedate,
+				issue.Fields.Summary,
+			})
+		}
+		out.SendGroupedTable(shortName, "user", headers, rows)
+	}
 
 	return nil
 }

@@ -1,48 +1,55 @@
-import { useState, useRef, useCallback } from 'react';
-import type { FuncDef } from '../types/types';
-import { runFunction } from '../api/api';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import type { FuncDef, TableData, FileData } from '../types/types';
+import { runFunction, getFnParams, saveFnParams } from '../api/api';
 import ParamForm from './ParamForm';
 import OutputConsole from './OutputConsole';
 
 interface Props {
   func: FuncDef;
+  jiraUrl?: string;
 }
 
-export default function FunctionPanel({ func: fn }: Props) {
-  const [values, setValues] = useState<Record<string, string>>(() => {
-    const defaults: Record<string, string> = {};
-    fn.params.forEach(p => {
-      if (p.default !== undefined) defaults[p.name] = p.default;
-    });
-    return defaults;
+function buildDefaults(fn: FuncDef): Record<string, string> {
+  const defaults: Record<string, string> = {};
+  fn.params.forEach(p => {
+    if (p.default !== undefined) {
+      defaults[p.name] = p.default;
+    } else if (p.type === 'multicheck' && p.options) {
+      defaults[p.name] = p.options.join(',');
+    }
   });
+  return defaults;
+}
+
+export default function FunctionPanel({ func: fn, jiraUrl }: Props) {
+  const [values, setValues] = useState<Record<string, string>>(() => buildDefaults(fn));
+
+  useEffect(() => {
+    getFnParams(fn.id).then(saved => {
+      if (saved && Object.keys(saved).length > 0) {
+        setValues(prev => ({ ...prev, ...saved }));
+      }
+    }).catch(() => {});
+  }, [fn.id]);
   const [lines, setLines] = useState<string[]>([]);
+  const [tables, setTables] = useState<TableData[]>([]);
+  const [files, setFiles] = useState<FileData[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Reset defaults when function changes
-  const prevFnId = useRef(fn.id);
-  if (prevFnId.current !== fn.id) {
-    prevFnId.current = fn.id;
-    const defaults: Record<string, string> = {};
-    fn.params.forEach(p => {
-      if (p.default !== undefined) defaults[p.name] = p.default;
-    });
-    setValues(defaults);
-    setLines([]);
-    setError(null);
-    setProgress(null);
-    setIsRunning(false);
-  }
-
+  const saveTimer = useRef<number | undefined>(undefined);
   const handleChange = useCallback((name: string, value: string) => {
-    setValues(prev => ({ ...prev, [name]: value }));
-  }, []);
+    setValues(prev => {
+      const next = { ...prev, [name]: value };
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = window.setTimeout(() => saveFnParams(fn.id, next), 500);
+      return next;
+    });
+  }, [fn.id]);
 
   const handleRun = useCallback(async () => {
-    // Validate required params
     for (const p of fn.params) {
       if (p.required && !values[p.name]) {
         setError(`Заполните поле: ${p.label}`);
@@ -51,6 +58,8 @@ export default function FunctionPanel({ func: fn }: Props) {
     }
 
     setLines([]);
+    setTables([]);
+    setFiles([]);
     setError(null);
     setProgress(null);
     setIsRunning(true);
@@ -65,6 +74,12 @@ export default function FunctionPanel({ func: fn }: Props) {
         },
         onProgress: (current, total) => {
           setProgress({ current, total });
+        },
+        onTable: (table) => {
+          setTables(prev => [...prev, table]);
+        },
+        onFile: (file) => {
+          setFiles(prev => [...prev, file]);
         },
         onError: (msg) => {
           setError(msg);
@@ -89,6 +104,19 @@ export default function FunctionPanel({ func: fn }: Props) {
     abortRef.current?.abort();
   }, []);
 
+  const buttons = (
+    <>
+      <button className="btn btn-primary" onClick={handleRun} disabled={isRunning}>
+        {isRunning ? 'Выполняется...' : 'Запустить'}
+      </button>
+      {isRunning && (
+        <button className="btn btn-secondary" onClick={handleCancel}>
+          Отмена
+        </button>
+      )}
+    </>
+  );
+
   return (
     <div>
       <div className="panel-header">
@@ -96,29 +124,40 @@ export default function FunctionPanel({ func: fn }: Props) {
         <p>{fn.description}</p>
       </div>
 
-      <ParamForm
-        params={fn.params}
-        values={values}
-        onChange={handleChange}
-        disabled={isRunning}
-      />
-
-      <div className="btn-row">
-        <button className="btn btn-primary" onClick={handleRun} disabled={isRunning}>
-          {isRunning ? 'Выполняется...' : 'Запустить'}
-        </button>
-        {isRunning && (
-          <button className="btn btn-secondary" onClick={handleCancel}>
-            Отмена
-          </button>
-        )}
-      </div>
+      {fn.layout === 'inline' ? (
+        <div className="inline-controls">
+          <ParamForm
+            params={fn.params}
+            values={values}
+            onChange={handleChange}
+            disabled={isRunning}
+            inline
+          />
+          {buttons}
+        </div>
+      ) : (
+        <>
+          <ParamForm
+            params={fn.params}
+            values={values}
+            onChange={handleChange}
+            disabled={isRunning}
+          />
+          <div className="btn-row">
+            {buttons}
+          </div>
+        </>
+      )}
 
       <OutputConsole
         lines={lines}
+        tables={tables}
+        files={files}
         isRunning={isRunning}
         progress={progress}
         error={error}
+        funcName={fn.name}
+        jiraUrl={jiraUrl}
       />
     </div>
   );
