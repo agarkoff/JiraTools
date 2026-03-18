@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { FuncDef, TableData, FileData, GanttData } from '../types/types';
 import { runFunction, getFnParams, saveFnParams } from '../api/api';
 import ParamForm from './ParamForm';
-import OutputConsole from './OutputConsole';
+import OutputConsole, { downloadExcel } from './OutputConsole';
 
 interface Props {
   func: FuncDef;
@@ -109,6 +109,10 @@ export default function FunctionPanel({ func: fn, jiraUrl }: Props) {
     abortRef.current?.abort();
   }, []);
 
+  const handleExcel = useCallback(() => {
+    downloadExcel(tables, fn.name || 'export');
+  }, [tables, fn.name]);
+
   const buttons = (
     <>
       <button className="btn btn-primary" onClick={handleRun} disabled={isRunning}>
@@ -117,6 +121,11 @@ export default function FunctionPanel({ func: fn, jiraUrl }: Props) {
       {isRunning && (
         <button className="btn btn-secondary" onClick={handleCancel}>
           Отмена
+        </button>
+      )}
+      {tables.length > 0 && !isRunning && (
+        <button className="btn btn-success" onClick={handleExcel}>
+          Скачать Excel
         </button>
       )}
     </>

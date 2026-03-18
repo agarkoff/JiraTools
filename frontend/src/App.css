@@ -209,6 +209,15 @@
   cursor: not-allowed;
 }
 
+.btn-success {
+  background: #16a34a;
+  color: #fff;
+}
+
+.btn-success:hover {
+  background: #15803d;
+}
+
 .btn-danger {
   background: var(--danger);
   color: #fff;

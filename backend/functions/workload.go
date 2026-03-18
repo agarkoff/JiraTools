@@ -83,7 +83,6 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 	jql := fmt.Sprintf(`%s AND assignee IN (%s)`, baseFilter, strings.Join(quoted, ","))
 
 	// Определяем период
-	periodLabel := "все задачи"
 	now := time.Now()
 	switch period {
 	case "Неделя", "week":
@@ -93,15 +92,11 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 		}
 		monday := now.AddDate(0, 0, -int(weekday-time.Monday))
 		sunday := monday.AddDate(0, 0, 6)
-		datePart := fmt.Sprintf(` AND duedate >= "%s" AND duedate <= "%s"`, monday.Format("2006-01-02"), sunday.Format("2006-01-02"))
-		jql += datePart
-		periodLabel = fmt.Sprintf("неделя (%s — %s)", monday.Format("02.01"), sunday.Format("02.01"))
+		jql += fmt.Sprintf(` AND duedate >= "%s" AND duedate <= "%s"`, monday.Format("2006-01-02"), sunday.Format("2006-01-02"))
 	case "Месяц", "month":
 		firstDay := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 		lastDay := firstDay.AddDate(0, 1, -1)
-		datePart := fmt.Sprintf(` AND duedate >= "%s" AND duedate <= "%s"`, firstDay.Format("2006-01-02"), lastDay.Format("2006-01-02"))
-		jql += datePart
-		periodLabel = fmt.Sprintf("месяц (%s)", now.Format("01.2006"))
+		jql += fmt.Sprintf(` AND duedate >= "%s" AND duedate <= "%s"`, firstDay.Format("2006-01-02"), lastDay.Format("2006-01-02"))
 	default:
 		// "Все", "all" — без фильтрации
 	}
@@ -151,9 +146,6 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 	sort.Slice(logins, func(i, j int) bool {
 		return byUser[logins[i]].displayName < byUser[logins[j]].displayName
 	})
-
-	// Заголовок
-	out.Printf("Проект: %s | Период: %s | Пользователей: %d", strings.Join(projects, ", "), periodLabel, len(cfg.Users))
 
 	// Сводка (первой)
 	summaryHeaders := []string{"Пользователь", "Задач", "Оценка"}

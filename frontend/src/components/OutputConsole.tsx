@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import type { TableData, FileData, GanttData } from '../types/types';
 import GanttChart from './GanttChart';
@@ -46,7 +46,7 @@ function LinkedText({ text, jiraUrl }: { text: string; jiraUrl?: string }) {
   );
 }
 
-function downloadExcel(tables: TableData[], fileName: string) {
+export function downloadExcel(tables: TableData[], fileName: string) {
   const wb = XLSX.utils.book_new();
   const allTables = tables.filter(t => !t.group);
   const groups: Record<string, TableData[]> = {};
@@ -130,10 +130,6 @@ export default function OutputConsole({ lines, tables, files, gantt, isRunning, 
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [lines.length, tables.length]);
 
-  const handleDownload = useCallback(() => {
-    downloadExcel(tables, funcName || 'export');
-  }, [tables, funcName]);
-
   if (lines.length === 0 && tables.length === 0 && (!files || files.length === 0) && !isRunning && !error) return null;
 
   return (
@@ -155,14 +151,6 @@ export default function OutputConsole({ lines, tables, files, gantt, isRunning, 
           {lines.map((line, i) => (
             <div className="output-line-text" key={i}><LinkedText text={line} jiraUrl={jiraUrl} /></div>
           ))}
-        </div>
-      )}
-
-      {tables.length > 0 && !isRunning && (
-        <div className="download-row">
-          <button className="btn btn-secondary" onClick={handleDownload}>
-            Скачать Excel
-          </button>
         </div>
       )}
 
