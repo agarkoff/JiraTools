@@ -108,6 +108,16 @@ func GetRegistry() []FuncDef {
 			Runner: RunNoFixVersion,
 		},
 		{
+			ID:          "due-mismatch",
+			Name:        "Сроки задач vs историй",
+			Description: "Найти задачи, у которых срок позже срока связанной истории",
+			Params: []Param{
+				{Name: "project", Type: "multicheck", Label: "Проекты", Required: true, Options: []string{"ECPSKL", "ECPTRANSIT"}},
+				{Name: "skip_done", Type: "boolean", Label: "Не учитывать Готово и Отклонено", Default: "true"},
+			},
+			Runner: RunDueMismatch,
+		},
+		{
 			ID:          "group-orphans",
 			Name:        "Группировка задач-сирот",
 			Description: "Найти задачи без историй, сгруппировать по сходству и предложить подходящие истории",
