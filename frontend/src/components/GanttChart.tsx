@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { GanttData } from '../types/types';
+import type { GanttData, GanttTask } from '../types/types';
 
 interface Props {
   data: GanttData;
@@ -56,8 +56,17 @@ export default function GanttChart({ data, jiraUrl }: Props) {
     return (daysBetween(startDate, d) / totalDays) * 100;
   };
 
-  const barWidth = (s: string, e: string) => {
-    return ((daysBetween(parseDate(s), parseDate(e)) + 1) / totalDays) * 100;
+  const taskLeft = (task: GanttTask) => {
+    const dayIdx = daysBetween(startDate, parseDate(task.start));
+    return ((dayIdx + (task.start_frac || 0)) / totalDays) * 100;
+  };
+
+  const taskWidth = (task: GanttTask) => {
+    const startIdx = daysBetween(startDate, parseDate(task.start));
+    const endIdx = daysBetween(startDate, parseDate(task.end));
+    const left = startIdx + (task.start_frac || 0);
+    const right = endIdx + (task.end_frac || 1);
+    return Math.max(((right - left) / totalDays) * 100, dayPct * 0.3);
   };
 
   const todayPct = pct(data.today);
@@ -125,8 +134,8 @@ export default function GanttChart({ data, jiraUrl }: Props) {
                         <div
                           className={`gantt-bar ${task.overdue ? 'overdue' : ''}`}
                           style={{
-                            left: `${pct(task.start)}%`,
-                            width: `${Math.max(barWidth(task.start, task.end), dayPct * 0.5)}%`,
+                            left: `${taskLeft(task)}%`,
+                            width: `${taskWidth(task)}%`,
                           }}
                           title={`${task.key}: ${task.summary}\nПриоритет: ${task.priority_name || '—'}\nОценка: ${task.estimate_hours > 0 ? task.estimate_hours.toFixed(0) + 'ч' : 'нет'}\nСрок: ${task.due_date || 'нет'}\nСтатус: ${task.status}`}
                         />

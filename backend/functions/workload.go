@@ -25,6 +25,8 @@ type ganttTask struct {
 	Summary       string  `json:"summary"`
 	Start         string  `json:"start"`
 	End           string  `json:"end"`
+	StartFrac     float64 `json:"start_frac"`
+	EndFrac       float64 `json:"end_frac"`
 	DueDate       string  `json:"due_date,omitempty"`
 	EstimateHours float64 `json:"estimate_hours"`
 	Overdue       bool    `json:"overdue"`
@@ -261,6 +263,8 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 				if endDay < startDay {
 					endDay = startDay
 				}
+				startFrac := (hourOffset - float64(startDay)*hoursPerDay) / hoursPerDay
+				endFrac := (hourOffset + schedHours - float64(endDay)*hoursPerDay) / hoursPerDay
 				hourOffset += schedHours
 
 				start := calendar.AddWorkDays(baseDay, startDay)
@@ -298,6 +302,8 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 					Summary:       issue.Fields.Summary,
 					Start:         start.Format("2006-01-02"),
 					End:           end.Format("2006-01-02"),
+					StartFrac:     startFrac,
+					EndFrac:       endFrac,
 					DueDate:       dueDateStr,
 					EstimateHours: estHours,
 					Overdue:       isOverdue,

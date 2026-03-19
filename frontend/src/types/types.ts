@@ -57,6 +57,8 @@ export interface GanttTask {
   summary: string;
   start: string;
   end: string;
+  start_frac: number;
+  end_frac: number;
   due_date?: string;
   estimate_hours: number;
   overdue: boolean;
