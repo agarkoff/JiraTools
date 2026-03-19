@@ -79,3 +79,15 @@ export interface GanttData {
   today: string;
   non_working_days?: string[];
 }
+
+export interface RunEvent {
+  seq: number;
+  type: string;
+  data: TableData | GanttData | FileData;
+}
+
+export interface LatestResult {
+  run: Run;
+  lines: RunOutputLine[];
+  events: RunEvent[];
+}

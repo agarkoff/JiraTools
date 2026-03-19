@@ -242,6 +242,17 @@
   align-items: center;
 }
 
+.freshness-badge {
+  margin-left: auto;
+  background: #fce7f3;
+  color: #be185d;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 /* Output area */
 .output-area {
   margin-top: 16px;

@@ -1,4 +1,4 @@
-import type { FuncDef, Run, RunOutputLine, TableData, FileData, GanttData } from '../types/types';
+import type { FuncDef, Run, RunOutputLine, TableData, FileData, GanttData, LatestResult } from '../types/types';
 
 const API = '/api';
 
@@ -71,6 +71,11 @@ export async function getRunOutput(id: number): Promise<RunOutputLine[]> {
 
 export async function deleteRun(id: number): Promise<void> {
   return fetchJson(`${API}/runs/${id}`, { method: 'DELETE' });
+}
+
+// Latest cached result
+export async function getLatestResult(funcId: string): Promise<LatestResult | null> {
+  return fetchJson(`${API}/functions/${funcId}/latest`);
 }
 
 // SSE streaming for function execution

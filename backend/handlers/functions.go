@@ -76,3 +76,42 @@ func (h *FunctionsHandler) RunFunction(w http.ResponseWriter, r *http.Request) {
 	models.FinishRun(h.DB, runID, "completed", nil)
 	out.SendCompleted()
 }
+
+func (h *FunctionsHandler) GetLatestResult(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/functions/")
+	name := strings.TrimSuffix(path, "/latest")
+
+	run, err := models.GetLatestCompletedRun(h.DB, name)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if run == nil {
+		writeJSON(w, nil)
+		return
+	}
+
+	lines, err := models.GetRunOutput(h.DB, run.ID)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if lines == nil {
+		lines = []models.RunOutputLine{}
+	}
+
+	events, err := models.GetRunEvents(h.DB, run.ID)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if events == nil {
+		events = []models.RunEvent{}
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"run":    run,
+		"lines":  lines,
+		"events": events,
+	})
+}

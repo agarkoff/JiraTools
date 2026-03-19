@@ -12,12 +12,13 @@ import (
 )
 
 type Writer struct {
-	w       http.ResponseWriter
-	flusher http.Flusher
-	runID   int
-	db      *sql.DB
-	lineNum int
-	mu      sync.Mutex
+	w        http.ResponseWriter
+	flusher  http.Flusher
+	runID    int
+	db       *sql.DB
+	lineNum  int
+	eventSeq int
+	mu       sync.Mutex
 }
 
 func NewWriter(w http.ResponseWriter, db *sql.DB, runID int) *Writer {
@@ -102,11 +103,29 @@ func (s *Writer) writeLine(text string) {
 	}
 }
 
+func (s *Writer) persistEvent(eventType string, data interface{}) {
+	if s.db == nil {
+		return
+	}
+	s.mu.Lock()
+	s.eventSeq++
+	seq := s.eventSeq
+	s.mu.Unlock()
+
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	models.InsertRunEvent(s.db, s.runID, seq, eventType, string(jsonData))
+}
+
 func (s *Writer) SendTable(headers []string, rows [][]string) {
-	s.sendEvent("table", map[string]interface{}{
+	data := map[string]interface{}{
 		"headers": headers,
 		"rows":    rows,
-	})
+	}
+	s.sendEvent("table", data)
+	s.persistEvent("table", data)
 }
 
 func (s *Writer) SendGroupedTable(title, group string, headers []string, rows [][]string) {
@@ -121,17 +140,21 @@ func (s *Writer) SendGroupedTable(title, group string, headers []string, rows []
 		data["group"] = group
 	}
 	s.sendEvent("table", data)
+	s.persistEvent("table", data)
 }
 
 func (s *Writer) SendGantt(data interface{}) {
 	s.sendEvent("gantt", data)
+	s.persistEvent("gantt", data)
 }
 
 func (s *Writer) SendFile(filename, content string) {
-	s.sendEvent("file", map[string]string{
+	data := map[string]string{
 		"filename": filename,
 		"content":  content,
-	})
+	}
+	s.sendEvent("file", data)
+	s.persistEvent("file", data)
 }
 
 func (s *Writer) RunID() int {

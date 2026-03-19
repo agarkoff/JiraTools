@@ -206,6 +206,57 @@ func GetRunOutput(db *sql.DB, runID int) ([]RunOutputLine, error) {
 	return lines, nil
 }
 
+// Run events (structured: table, gantt, file)
+
+type RunEvent struct {
+	Seq       int             `json:"seq"`
+	EventType string          `json:"type"`
+	Data      json.RawMessage `json:"data"`
+}
+
+func InsertRunEvent(db *sql.DB, runID, seq int, eventType, data string) error {
+	_, err := db.Exec(
+		"INSERT INTO run_events (run_id, seq, event_type, data) VALUES ($1, $2, $3, $4)",
+		runID, seq, eventType, data,
+	)
+	return err
+}
+
+func GetRunEvents(db *sql.DB, runID int) ([]RunEvent, error) {
+	rows, err := db.Query(
+		"SELECT seq, event_type, data FROM run_events WHERE run_id = $1 ORDER BY seq", runID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []RunEvent
+	for rows.Next() {
+		var e RunEvent
+		var dataStr string
+		if err := rows.Scan(&e.Seq, &e.EventType, &dataStr); err != nil {
+			return nil, err
+		}
+		e.Data = json.RawMessage(dataStr)
+		events = append(events, e)
+	}
+	return events, nil
+}
+
+func GetLatestCompletedRun(db *sql.DB, function string) (*Run, error) {
+	var r Run
+	err := db.QueryRow(
+		`SELECT id, function, params, status, error, started_at, finished_at
+		 FROM runs WHERE function = $1 AND status = 'completed'
+		 ORDER BY finished_at DESC LIMIT 1`, function,
+	).Scan(&r.ID, &r.Function, &r.Params, &r.Status, &r.Error, &r.StartedAt, &r.FinishedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return &r, err
+}
+
 func itoa(i int) string {
 	return fmt.Sprintf("%d", i)
 }

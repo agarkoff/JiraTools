@@ -36,6 +36,14 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_run_output_run_id ON run_output(run_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_runs_function ON runs(function)`,
 		`CREATE INDEX IF NOT EXISTS idx_runs_started_at ON runs(started_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS run_events (
+			id         SERIAL PRIMARY KEY,
+			run_id     INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+			seq        INTEGER NOT NULL,
+			event_type VARCHAR(20) NOT NULL,
+			data       TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_run_events_run_id ON run_events(run_id)`,
 	}
 
 	for i, m := range migrations {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { FuncDef, TableData, FileData, GanttData } from '../types/types';
-import { runFunction, getFnParams, saveFnParams } from '../api/api';
+import { runFunction, getFnParams, saveFnParams, getLatestResult } from '../api/api';
 import ParamForm from './ParamForm';
 import OutputConsole, { downloadExcel } from './OutputConsole';
 
@@ -30,6 +30,29 @@ export default function FunctionPanel({ func: fn, jiraUrl }: Props) {
         setValues(prev => ({ ...prev, ...saved }));
       }
     }).catch(() => {});
+
+    // Load cached result
+    setLines([]);
+    setTables([]);
+    setFiles([]);
+    setGantt(null);
+    setError(null);
+    setCachedAt(null);
+
+    getLatestResult(fn.id).then(result => {
+      if (!result) return;
+      setLines(result.lines.map(l => l.text));
+      const newTables: TableData[] = [];
+      for (const ev of result.events) {
+        switch (ev.type) {
+          case 'table': newTables.push(ev.data as TableData); break;
+          case 'gantt': setGantt(ev.data as GanttData); break;
+          case 'file': setFiles(prev => [...prev, ev.data as FileData]); break;
+        }
+      }
+      if (newTables.length > 0) setTables(newTables);
+      setCachedAt(result.run.finished_at);
+    }).catch(() => {});
   }, [fn.id]);
   const [lines, setLines] = useState<string[]>([]);
   const [tables, setTables] = useState<TableData[]>([]);
@@ -38,6 +61,7 @@ export default function FunctionPanel({ func: fn, jiraUrl }: Props) {
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cachedAt, setCachedAt] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const saveTimer = useRef<number | undefined>(undefined);
@@ -91,6 +115,7 @@ export default function FunctionPanel({ func: fn, jiraUrl }: Props) {
         },
         onCompleted: () => {
           setProgress(null);
+          setCachedAt(new Date().toISOString());
         },
       }, controller.signal);
     } catch (e) {
@@ -113,6 +138,12 @@ export default function FunctionPanel({ func: fn, jiraUrl }: Props) {
     downloadExcel(tables, fn.name || 'export');
   }, [tables, fn.name]);
 
+  const formatFreshness = (iso: string) => {
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${String(d.getFullYear()).slice(2)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
   const buttons = (
     <>
       <button className="btn btn-primary" onClick={handleRun} disabled={isRunning}>
@@ -127,6 +158,9 @@ export default function FunctionPanel({ func: fn, jiraUrl }: Props) {
         <button className="btn btn-success" onClick={handleExcel}>
           Скачать Excel
         </button>
+      )}
+      {cachedAt && !isRunning && (
+        <span className="freshness-badge">Данные от {formatFreshness(cachedAt)}</span>
       )}
     </>
   );

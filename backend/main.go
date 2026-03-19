@@ -107,9 +107,12 @@ func main() {
 		}
 	})
 	mux.HandleFunc("/api/functions/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/run") {
+		switch {
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/run"):
 			funcH.RunFunction(w, r)
-		} else {
+		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/latest"):
+			funcH.GetLatestResult(w, r)
+		default:
 			http.Error(w, "method not allowed", 405)
 		}
 	})
