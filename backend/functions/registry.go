@@ -108,6 +108,15 @@ func GetRegistry() []FuncDef {
 			Runner: RunNoFixVersion,
 		},
 		{
+			ID:          "incomplete-stories",
+			Name:        "Незавершённые истории",
+			Description: "Истории в статусе «Готово» с незакрытыми дочерними задачами",
+			Params: []Param{
+				{Name: "project", Type: "multicheck", Label: "Проекты", Required: true, Options: []string{"ECPSKL", "ECPTRANSIT"}},
+			},
+			Runner: RunIncompleteStories,
+		},
+		{
 			ID:          "due-drift",
 			Name:        "Перенос сроков",
 			Description: "Показать задачи с наибольшим количеством переносов сроков",
