@@ -108,6 +108,17 @@ func GetRegistry() []FuncDef {
 			Runner: RunNoFixVersion,
 		},
 		{
+			ID:          "due-drift",
+			Name:        "Перенос сроков",
+			Description: "Показать задачи с наибольшим количеством переносов сроков",
+			Layout:      "inline",
+			Params: []Param{
+				{Name: "project", Type: "multicheck", Label: "Проекты", Required: true, Options: []string{"ECPSKL", "ECPTRANSIT"}},
+				{Name: "period", Type: "select", Label: "Период", Default: "3 месяца", Options: []string{"Месяц", "3 месяца", "Полгода"}},
+			},
+			Runner: RunDueDrift,
+		},
+		{
 			ID:          "due-mismatch",
 			Name:        "Сроки задач vs историй",
 			Description: "Найти задачи, у которых срок позже срока связанной истории",

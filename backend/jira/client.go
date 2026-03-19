@@ -65,6 +65,41 @@ func SearchIssues(cfg models.JiraConfig, jql string, fields string, startAt int)
 	return &result, nil
 }
 
+func DoSearchExpand(cfg models.JiraConfig, jql string, fields string, expand string, startAt int) ([]byte, error) {
+	params := url.Values{}
+	params.Set("jql", jql)
+	params.Set("fields", fields)
+	params.Set("expand", expand)
+	params.Set("startAt", fmt.Sprintf("%d", startAt))
+	params.Set("maxResults", "100")
+
+	reqURL := strings.TrimRight(cfg.URL, "/") + "/rest/api/2/search?" + params.Encode()
+
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.SetBasicAuth(cfg.Login, cfg.Password)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка запроса к Jira: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка чтения ответа: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Jira вернула статус %d: %s", resp.StatusCode, string(body))
+	}
+
+	return body, nil
+}
+
 func SearchIssuesDefault(cfg models.JiraConfig, jql string, startAt int) (*models.SearchResult, error) {
 	return SearchIssues(cfg, jql, "key,summary,status,creator,parent,issuelinks", startAt)
 }
