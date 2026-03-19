@@ -2,6 +2,7 @@ package functions
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -234,8 +235,10 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 				return pi < pj
 			})
 
-			// Schedule sequentially from today
-			cursor := calendar.SkipToWorkDay(today)
+			// Schedule sequentially from today, sub-day granularity
+			const hoursPerDay = 8.0
+			baseDay := calendar.SkipToWorkDay(today)
+			hourOffset := 0.0
 			var gTasks []ganttTask
 			overloaded := false
 			totalHours := float64(0)
@@ -248,17 +251,20 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 				estHours := float64(estSec) / 3600.0
 				totalHours += estHours
 
-				workDays := 1
-				if estSec > 0 {
-					workDays = estSec / (8 * 3600)
-					if estSec%(8*3600) > 0 {
-						workDays++
-					}
+				schedHours := estHours
+				if schedHours <= 0 {
+					schedHours = hoursPerDay // unestimated = 1 full day
 				}
 
-				start := cursor
-				end := calendar.AddWorkDays(cursor, workDays-1)
-				cursor = calendar.AddWorkDays(end, 1)
+				startDay := int(hourOffset / hoursPerDay)
+				endDay := int(math.Ceil((hourOffset+schedHours)/hoursPerDay)) - 1
+				if endDay < startDay {
+					endDay = startDay
+				}
+				hourOffset += schedHours
+
+				start := calendar.AddWorkDays(baseDay, startDay)
+				end := calendar.AddWorkDays(baseDay, endDay)
 
 				isOverdue := false
 				dueDateStr := ""
