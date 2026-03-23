@@ -158,6 +158,17 @@ func GetRegistry() []FuncDef {
 			Runner: RunGroupOrphans,
 		},
 		{
+			ID:          "commit-tracker",
+			Name:        "Коммиты в ветках",
+			Description: "Найти коммиты и MR по задаче, проверить наличие в релизных ветках",
+			Layout:      "inline",
+			Params: []Param{
+				{Name: "issue_key", Type: "string", Label: "Ключ задачи", Required: true},
+				{Name: "branch_prefix", Type: "string", Label: "Префикс веток", Default: "release-"},
+			},
+			Runner: RunCommitTracker,
+		},
+		{
 			ID:          "msproject",
 			Name:        "Экспорт в MS Project",
 			Description: "Экспорт иерархии Эпик → История → Задача в формат MS Project XML",

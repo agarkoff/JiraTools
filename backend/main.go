@@ -66,6 +66,13 @@ func main() {
 			http.Error(w, "method not allowed", 405)
 		}
 	})
+	mux.HandleFunc("/api/config/test-gitlab", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			configH.TestGitLab(w, r)
+		} else {
+			http.Error(w, "method not allowed", 405)
+		}
+	})
 
 	// Users
 	mux.HandleFunc("/api/users", func(w http.ResponseWriter, r *http.Request) {

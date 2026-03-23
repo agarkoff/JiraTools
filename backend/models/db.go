@@ -66,6 +66,24 @@ func LoadLLMConfig(db *sql.DB) (LLMConfig, error) {
 	}, nil
 }
 
+type GitLabConfig struct {
+	URL     string
+	Token   string
+	Project string
+}
+
+func LoadGitLabConfig(db *sql.DB) (GitLabConfig, error) {
+	cfg, err := GetConfig(db)
+	if err != nil {
+		return GitLabConfig{}, err
+	}
+	return GitLabConfig{
+		URL:     cfg["gitlab_url"],
+		Token:   cfg["gitlab_token"],
+		Project: cfg["gitlab_project"],
+	}, nil
+}
+
 // Users DB operations
 
 func GetUsers(db *sql.DB) ([]string, error) {

@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { getConfig, updateConfig, testConnection, getUsers, addUser, deleteUser } from '../api/api';
+import { getConfig, updateConfig, testConnection, testGitlab, getUsers, addUser, deleteUser } from '../api/api';
 
 export default function ConfigPage() {
   const [cfg, setCfg] = useState<Record<string, string>>({});
   const [users, setUsers] = useState<string[]>([]);
   const [newUser, setNewUser] = useState('');
   const [testResult, setTestResult] = useState<{ status: string; message: string } | null>(null);
+  const [gitlabTestResult, setGitlabTestResult] = useState<{ status: string; message: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -90,6 +91,56 @@ export default function ConfigPage() {
         {testResult && (
           <p style={{ marginTop: 8, color: testResult.status === 'ok' ? 'var(--success)' : 'var(--danger)', fontSize: 14 }}>
             {testResult.message}
+          </p>
+        )}
+      </div>
+
+      <div className="config-section">
+        <h3>GitLab</h3>
+        <div className="param-form">
+          <div className="form-group">
+            <label>URL GitLab</label>
+            <input
+              type="text"
+              value={cfg.gitlab_url || ''}
+              onChange={e => setCfg({ ...cfg, gitlab_url: e.target.value })}
+              placeholder="https://gitlab.example.com"
+            />
+          </div>
+          <div className="form-group">
+            <label>Private Token</label>
+            <input
+              type="password"
+              value={cfg.gitlab_token || ''}
+              onChange={e => setCfg({ ...cfg, gitlab_token: e.target.value })}
+            />
+          </div>
+          <div className="form-group">
+            <label>Проект (ID или путь)</label>
+            <input
+              type="text"
+              value={cfg.gitlab_project || ''}
+              onChange={e => setCfg({ ...cfg, gitlab_project: e.target.value })}
+              placeholder="group/project"
+            />
+          </div>
+        </div>
+        <div className="btn-row">
+          <button className="btn btn-secondary" onClick={async () => {
+            setGitlabTestResult(null);
+            try {
+              const r = await testGitlab();
+              setGitlabTestResult(r);
+            } catch (e) {
+              setGitlabTestResult({ status: 'error', message: String(e) });
+            }
+          }}>
+            Проверить подключение
+          </button>
+        </div>
+        {gitlabTestResult && (
+          <p style={{ marginTop: 8, color: gitlabTestResult.status === 'ok' ? 'var(--success)' : 'var(--danger)', fontSize: 14 }}>
+            {gitlabTestResult.message}
           </p>
         )}
       </div>

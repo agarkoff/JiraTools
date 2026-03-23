@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"jira-tools-web/gitlab"
 	"jira-tools-web/jira"
 	"jira-tools-web/models"
 )
@@ -20,9 +21,12 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	// Redact password
+	// Redact secrets
 	if _, ok := cfg["jira_password"]; ok {
 		cfg["jira_password"] = "***"
+	}
+	if _, ok := cfg["gitlab_token"]; ok {
+		cfg["gitlab_token"] = "***"
 	}
 	writeJSON(w, cfg)
 }
@@ -33,9 +37,9 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid json", 400)
 		return
 	}
-	for _, key := range []string{"jira_url", "jira_login", "jira_password"} {
+	for _, key := range []string{"jira_url", "jira_login", "jira_password", "ollama_url", "ollama_model", "gitlab_url", "gitlab_token", "gitlab_project"} {
 		if val, ok := body[key]; ok {
-			if key == "jira_password" && val == "***" {
+			if (key == "jira_password" || key == "gitlab_token") && val == "***" {
 				continue // don't overwrite with redacted value
 			}
 			if err := models.SetConfig(h.DB, key, val); err != nil {
@@ -103,6 +107,24 @@ func (h *ConfigHandler) TestConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok", "message": "Подключение успешно"})
+}
+
+func (h *ConfigHandler) TestGitLab(w http.ResponseWriter, r *http.Request) {
+	glCfg, err := models.LoadGitLabConfig(h.DB)
+	if err != nil {
+		writeJSON(w, map[string]string{"status": "error", "message": err.Error()})
+		return
+	}
+	if glCfg.URL == "" {
+		writeJSON(w, map[string]string{"status": "error", "message": "URL GitLab не настроен"})
+		return
+	}
+	glc := gitlab.Config{URL: glCfg.URL, Token: glCfg.Token, Project: glCfg.Project}
+	if err := gitlab.TestConnection(glc); err != nil {
+		writeJSON(w, map[string]string{"status": "error", "message": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok", "message": "GitLab подключение успешно"})
 }
 
 func (h *ConfigHandler) GetFnParams(w http.ResponseWriter, r *http.Request) {

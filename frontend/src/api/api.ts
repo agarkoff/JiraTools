@@ -31,6 +31,10 @@ export async function testConnection(): Promise<{ status: string; message: strin
   return fetchJson(`${API}/config/test`, { method: 'POST' });
 }
 
+export async function testGitlab(): Promise<{ status: string; message: string }> {
+  return fetchJson(`${API}/config/test-gitlab`, { method: 'POST' });
+}
+
 // Users
 export async function getUsers(): Promise<string[]> {
   return fetchJson(`${API}/users`);
