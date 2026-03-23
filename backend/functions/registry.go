@@ -108,6 +108,16 @@ func GetRegistry() []FuncDef {
 			Runner: RunNoFixVersion,
 		},
 		{
+			ID:          "task-export",
+			Name:        "Экспорт задач",
+			Description: "Выгрузить summary и description всех задач в текстовый файл",
+			Params: []Param{
+				{Name: "project", Type: "multicheck", Label: "Проекты", Required: true, Options: []string{"ECPSKL", "ECPTRANSIT"}},
+				{Name: "refresh", Type: "boolean", Label: "Перечитать с сервера"},
+			},
+			Runner: RunTaskExport,
+		},
+		{
 			ID:          "incomplete-stories",
 			Name:        "Незавершённые истории",
 			Description: "Истории в статусе «Готово» с незакрытыми дочерними задачами",

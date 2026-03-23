@@ -44,6 +44,16 @@ func RunMigrations(db *sql.DB) error {
 			data       TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_run_events_run_id ON run_events(run_id)`,
+		`CREATE TABLE IF NOT EXISTS task_cache (
+			key         VARCHAR(32) PRIMARY KEY,
+			project     VARCHAR(32) NOT NULL,
+			issue_type  VARCHAR(64) NOT NULL,
+			summary     TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			status      VARCHAR(64) NOT NULL DEFAULT '',
+			cached_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_task_cache_project ON task_cache(project)`,
 	}
 
 	for i, m := range migrations {

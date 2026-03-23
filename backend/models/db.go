@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -255,6 +256,54 @@ func GetLatestCompletedRun(db *sql.DB, function string) (*Run, error) {
 		return nil, nil
 	}
 	return &r, err
+}
+
+// Task cache
+
+type TaskCacheEntry struct {
+	Key         string `json:"key"`
+	Project     string `json:"project"`
+	IssueType   string `json:"issue_type"`
+	Summary     string `json:"summary"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+}
+
+func UpsertTaskCache(db *sql.DB, key, project, issueType, summary, description, status string) error {
+	_, err := db.Exec(`INSERT INTO task_cache (key, project, issue_type, summary, description, status, cached_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW())
+		ON CONFLICT (key) DO UPDATE SET
+			summary = $4, description = $5, status = $6, issue_type = $3, cached_at = NOW()`,
+		key, project, issueType, summary, description, status)
+	return err
+}
+
+func GetCachedTasks(db *sql.DB, projects []string) ([]TaskCacheEntry, error) {
+	ph := make([]string, len(projects))
+	args := make([]interface{}, len(projects))
+	for i, p := range projects {
+		ph[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = p
+	}
+	rows, err := db.Query(
+		fmt.Sprintf(`SELECT key, project, issue_type, summary, description, status
+			FROM task_cache WHERE project IN (%s) ORDER BY key`, strings.Join(ph, ",")),
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []TaskCacheEntry
+	for rows.Next() {
+		var t TaskCacheEntry
+		if err := rows.Scan(&t.Key, &t.Project, &t.IssueType, &t.Summary, &t.Description, &t.Status); err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, t)
+	}
+	return tasks, nil
 }
 
 func itoa(i int) string {
