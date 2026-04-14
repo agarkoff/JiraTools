@@ -163,10 +163,16 @@ func RunDueDrift(cfg models.JiraConfig, params map[string]string, out *sse.Write
 			author = issue.Fields.Creator.DisplayName
 		}
 
+		summary := issue.Fields.Summary
+		if cfg.DemoMode {
+			summary = jira.MaskSummary(summary)
+			author = jira.MaskName(author)
+		}
+
 		drifts = append(drifts, driftEntry{
 			key:         issue.Key,
 			issueType:   issue.Fields.IssueType.Name,
-			summary:     issue.Fields.Summary,
+			summary:     summary,
 			author:      author,
 			changes:     steps,
 			changeCount: len(steps),

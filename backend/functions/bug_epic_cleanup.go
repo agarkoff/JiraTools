@@ -79,6 +79,9 @@ func RunBugEpicCleanup(cfg models.JiraConfig, params map[string]string, out *sse
 		}
 
 		for _, issue := range result.Issues {
+			if cfg.DemoMode {
+				jira.MaskRawFields(issue.Fields)
+			}
 			totalBugs++
 			b := bugEpicInfo{key: issue.Key}
 

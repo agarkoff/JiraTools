@@ -7,6 +7,7 @@ type JiraConfig struct {
 	Login    string   `json:"login"`
 	Password string   `json:"password"`
 	Users    []string `json:"users"`
+	DemoMode bool     `json:"demo_mode"`
 }
 
 type SearchResult struct {

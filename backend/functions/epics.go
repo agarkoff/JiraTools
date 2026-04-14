@@ -77,6 +77,9 @@ func RunEpics(cfg models.JiraConfig, params map[string]string, out *sse.Writer) 
 		}
 
 		for _, issue := range result.Issues {
+			if cfg.DemoMode {
+				jira.MaskRawFields(issue.Fields)
+			}
 			t := epicTaskInfo{key: issue.Key}
 
 			if raw, ok := issue.Fields["summary"]; ok {

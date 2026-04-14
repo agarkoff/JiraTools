@@ -47,6 +47,7 @@ func LoadJiraConfig(db *sql.DB) (JiraConfig, error) {
 		Login:    cfg["jira_login"],
 		Password: cfg["jira_password"],
 		Users:    users,
+		DemoMode: cfg["demo_mode"] == "true",
 	}, nil
 }
 

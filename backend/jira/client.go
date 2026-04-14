@@ -62,6 +62,11 @@ func SearchIssues(cfg models.JiraConfig, jql string, fields string, startAt int)
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("ошибка парсинга ответа: %w", err)
 	}
+	if cfg.DemoMode {
+		for i := range result.Issues {
+			MaskIssue(&result.Issues[i])
+		}
+	}
 	return &result, nil
 }
 
@@ -132,6 +137,9 @@ func FetchIssueWorklogs(cfg models.JiraConfig, issueKey string) ([]models.Worklo
 	var result models.WorklogResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("ошибка парсинга ворклогов: %w", err)
+	}
+	if cfg.DemoMode {
+		MaskWorklogs(result.Worklogs)
 	}
 	return result.Worklogs, nil
 }

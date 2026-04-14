@@ -158,6 +158,18 @@ export default function ConfigPage() {
       </div>
 
       <div className="config-section">
+        <h3>Демо-режим</h3>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+          <input
+            type="checkbox"
+            checked={cfg.demo_mode === 'true'}
+            onChange={e => setCfg({ ...cfg, demo_mode: e.target.checked ? 'true' : 'false' })}
+          />
+          Подменять ФИО и названия задач на фейковые (для скриншотов)
+        </label>
+      </div>
+
+      <div className="config-section">
         <h3>Ollama (LLM)</h3>
         <div className="param-form">
           <div className="form-group">

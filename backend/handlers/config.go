@@ -38,7 +38,7 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid json", 400)
 		return
 	}
-	for _, key := range []string{"jira_url", "jira_login", "jira_password", "ollama_url", "ollama_model", "gitlab_url", "gitlab_token"} {
+	for _, key := range []string{"jira_url", "jira_login", "jira_password", "ollama_url", "ollama_model", "gitlab_url", "gitlab_token", "demo_mode"} {
 		if val, ok := body[key]; ok {
 			if (key == "jira_password" || key == "gitlab_token") && val == "***" {
 				continue // don't overwrite with redacted value

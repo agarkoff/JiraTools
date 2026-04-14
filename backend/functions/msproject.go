@@ -153,6 +153,9 @@ func exportMSProject(cfg models.JiraConfig, project, epicField string, out *sse.
 		}
 
 		for _, raw := range result.Issues {
+			if cfg.DemoMode {
+				jira.MaskRawFields(raw.Fields)
+			}
 			sn := msStoryNode{}
 			sn.issue.Key = raw.Key
 			if v, ok := raw.Fields["summary"]; ok {
