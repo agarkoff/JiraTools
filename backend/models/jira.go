@@ -110,8 +110,9 @@ type WorklogResponse struct {
 }
 
 type Worklog struct {
-	Author           *User `json:"author"`
-	TimeSpentSeconds int   `json:"timeSpentSeconds"`
+	Author           *User  `json:"author"`
+	TimeSpentSeconds int    `json:"timeSpentSeconds"`
+	Started          string `json:"started"`
 }
 
 // RawSearchResult is used for parsing raw JSON fields (e.g. epic link custom field)

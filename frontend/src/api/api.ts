@@ -82,6 +82,46 @@ export async function getLatestResult(funcId: string): Promise<LatestResult | nu
   return fetchJson(`${API}/functions/${funcId}/latest`);
 }
 
+// Vacations
+export interface Vacation {
+  id: number;
+  user_login: string;
+  date_from: string;
+  date_to: string;
+  comment: string;
+}
+
+export async function getVacations(user?: string): Promise<Vacation[]> {
+  const params = user ? `?user=${encodeURIComponent(user)}` : '';
+  return fetchJson(`${API}/vacations${params}`);
+}
+
+export async function addVacation(userLogin: string, dateFrom: string, dateTo: string, comment: string): Promise<{ id: number }> {
+  return fetchJson(`${API}/vacations`, {
+    method: 'POST',
+    body: JSON.stringify({ user_login: userLogin, date_from: dateFrom, date_to: dateTo, comment }),
+  });
+}
+
+export async function deleteVacation(id: number): Promise<void> {
+  return fetchJson(`${API}/vacations/${id}`, { method: 'DELETE' });
+}
+
+// Resolved commits
+export async function resolveCommit(issueKey: string, commitSha: string): Promise<void> {
+  return fetchJson(`${API}/resolved-commits`, {
+    method: 'POST',
+    body: JSON.stringify({ issue_key: issueKey, commit_sha: commitSha }),
+  });
+}
+
+export async function unresolveCommit(issueKey: string, commitSha: string): Promise<void> {
+  return fetchJson(`${API}/resolved-commits`, {
+    method: 'DELETE',
+    body: JSON.stringify({ issue_key: issueKey, commit_sha: commitSha }),
+  });
+}
+
 // SSE streaming for function execution
 export interface SSECallbacks {
   onStarted?: (runId: number) => void;

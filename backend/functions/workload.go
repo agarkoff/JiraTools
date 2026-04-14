@@ -35,11 +35,18 @@ type ganttTask struct {
 	PriorityName  string  `json:"priority_name"`
 }
 
+type ganttVacation struct {
+	DateFrom string `json:"date_from"`
+	DateTo   string `json:"date_to"`
+	Comment  string `json:"comment"`
+}
+
 type ganttUser struct {
-	Name       string      `json:"name"`
-	Tasks      []ganttTask `json:"tasks"`
-	Overloaded bool        `json:"overloaded"`
-	TotalHours float64     `json:"total_hours"`
+	Name       string          `json:"name"`
+	Tasks      []ganttTask     `json:"tasks"`
+	Vacations  []ganttVacation `json:"vacations"`
+	Overloaded bool            `json:"overloaded"`
+	TotalHours float64         `json:"total_hours"`
 }
 
 type ganttChartData struct {
@@ -141,6 +148,14 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 		byUser[login].totalTime += est
 	}
 
+	// Load vacations
+	db := out.DB()
+	allVacations, _ := models.GetAllVacations(db)
+	vacByUser := make(map[string][]models.Vacation)
+	for _, v := range allVacations {
+		vacByUser[v.Login] = append(vacByUser[v.Login], v)
+	}
+
 	// Сортируем пользователей по displayName
 	logins := make([]string, 0, len(byUser))
 	for login := range byUser {
@@ -189,6 +204,38 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 		for _, login := range logins {
 			info := byUser[login]
 			shortName := jira.FormatDisplayName(info.displayName)
+
+			// Build vacation day set for this user
+			userVacs := vacByUser[login]
+			vacDays := make(map[string]bool)
+			for _, v := range userVacs {
+				vFrom, err1 := time.Parse("2006-01-02", v.DateFrom)
+				vTo, err2 := time.Parse("2006-01-02", v.DateTo)
+				if err1 == nil && err2 == nil {
+					for d := vFrom; !d.After(vTo); d = d.AddDate(0, 0, 1) {
+						vacDays[d.Format("2006-01-02")] = true
+					}
+				}
+			}
+			isUserNonWorking := func(t time.Time) bool {
+				return calendar.IsNonWorking(t) || vacDays[t.Format("2006-01-02")]
+			}
+			userSkipToWorkDay := func(t time.Time) time.Time {
+				for isUserNonWorking(t) {
+					t = t.AddDate(0, 0, 1)
+				}
+				return t
+			}
+			userAddWorkDays := func(from time.Time, n int) time.Time {
+				t := from
+				for i := 0; i < n; i++ {
+					t = t.AddDate(0, 0, 1)
+					for isUserNonWorking(t) {
+						t = t.AddDate(0, 0, 1)
+					}
+				}
+				return t
+			}
 
 			// Split tasks: with duedate and without
 			type taskWithDue struct {
@@ -239,7 +286,7 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 
 			// Schedule sequentially from today, sub-day granularity
 			const hoursPerDay = 8.0
-			baseDay := calendar.SkipToWorkDay(today)
+			baseDay := userSkipToWorkDay(today)
 			hourOffset := 0.0
 			var gTasks []ganttTask
 			overloaded := false
@@ -267,8 +314,8 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 				endFrac := (hourOffset + schedHours - float64(endDay)*hoursPerDay) / hoursPerDay
 				hourOffset += schedHours
 
-				start := calendar.AddWorkDays(baseDay, startDay)
-				end := calendar.AddWorkDays(baseDay, endDay)
+				start := userAddWorkDays(baseDay, startDay)
+				end := userAddWorkDays(baseDay, endDay)
 
 				isOverdue := false
 				dueDateStr := ""
@@ -320,12 +367,38 @@ func RunWorkload(cfg models.JiraConfig, params map[string]string, out *sse.Write
 				scheduleTask(issue, false, time.Time{})
 			}
 
+			var gVacs []ganttVacation
+			for _, v := range userVacs {
+				gVacs = append(gVacs, ganttVacation{
+					DateFrom: v.DateFrom,
+					DateTo:   v.DateTo,
+					Comment:  v.Comment,
+				})
+			}
+
 			gUsers = append(gUsers, ganttUser{
 				Name:       shortName,
 				Tasks:      gTasks,
+				Vacations:  gVacs,
 				Overloaded: overloaded,
 				TotalHours: totalHours,
 			})
+		}
+
+		// Extend chart to show overlapping vacations
+		for _, gu := range gUsers {
+			for _, v := range gu.Vacations {
+				vFrom, err1 := time.Parse("2006-01-02", v.DateFrom)
+				vTo, err2 := time.Parse("2006-01-02", v.DateTo)
+				if err1 != nil || err2 != nil {
+					continue
+				}
+				if !vTo.Before(chartStart) && !vFrom.After(chartEnd) {
+					if vTo.After(chartEnd) {
+						chartEnd = vTo
+					}
+				}
+			}
 		}
 
 		// Add buffer to chart end

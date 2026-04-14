@@ -184,6 +184,51 @@ func FetchRemoteLinks(cfg models.JiraConfig, issueKey string) ([]models.RemoteLi
 	return links, nil
 }
 
+// FetchIssueText returns description and comment bodies for an issue.
+func FetchIssueText(cfg models.JiraConfig, issueKey string) (description string, comments []string, err error) {
+	reqURL := strings.TrimRight(cfg.URL, "/") + "/rest/api/2/issue/" + issueKey + "?fields=description,comment"
+
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return "", nil, err
+	}
+	req.SetBasicAuth(cfg.Login, cfg.Password)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", nil, fmt.Errorf("Jira вернула статус %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Fields struct {
+			Description string `json:"description"`
+			Comment     struct {
+				Comments []struct {
+					Body string `json:"body"`
+				} `json:"comments"`
+			} `json:"comment"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", nil, err
+	}
+
+	for _, c := range result.Fields.Comment.Comments {
+		comments = append(comments, c.Body)
+	}
+	return result.Fields.Description, comments, nil
+}
+
 func UpdateIssue(cfg models.JiraConfig, issueKey string, payload map[string]interface{}) error {
 	data, err := json.Marshal(payload)
 	if err != nil {

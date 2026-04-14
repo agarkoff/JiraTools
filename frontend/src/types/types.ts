@@ -67,9 +67,16 @@ export interface GanttTask {
   priority_name: string;
 }
 
+export interface GanttVacation {
+  date_from: string;
+  date_to: string;
+  comment: string;
+}
+
 export interface GanttUser {
   name: string;
   tasks: GanttTask[];
+  vacations?: GanttVacation[];
   overloaded: boolean;
   total_hours: number;
 }

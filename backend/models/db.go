@@ -67,9 +67,8 @@ func LoadLLMConfig(db *sql.DB) (LLMConfig, error) {
 }
 
 type GitLabConfig struct {
-	URL     string
-	Token   string
-	Project string
+	URL   string
+	Token string
 }
 
 func LoadGitLabConfig(db *sql.DB) (GitLabConfig, error) {
@@ -78,9 +77,8 @@ func LoadGitLabConfig(db *sql.DB) (GitLabConfig, error) {
 		return GitLabConfig{}, err
 	}
 	return GitLabConfig{
-		URL:     cfg["gitlab_url"],
-		Token:   cfg["gitlab_token"],
-		Project: cfg["gitlab_project"],
+		URL:   cfg["gitlab_url"],
+		Token: cfg["gitlab_token"],
 	}, nil
 }
 
@@ -322,6 +320,100 @@ func GetCachedTasks(db *sql.DB, projects []string) ([]TaskCacheEntry, error) {
 		tasks = append(tasks, t)
 	}
 	return tasks, nil
+}
+
+// User vacations
+
+type Vacation struct {
+	ID       int    `json:"id"`
+	Login    string `json:"user_login"`
+	DateFrom string `json:"date_from"`
+	DateTo   string `json:"date_to"`
+	Comment  string `json:"comment"`
+}
+
+func GetUserVacations(db *sql.DB, login string) ([]Vacation, error) {
+	rows, err := db.Query(
+		"SELECT id, user_login, date_from::text, date_to::text, comment FROM user_vacations WHERE user_login = $1 ORDER BY date_from",
+		login,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []Vacation
+	for rows.Next() {
+		var v Vacation
+		if err := rows.Scan(&v.ID, &v.Login, &v.DateFrom, &v.DateTo, &v.Comment); err != nil {
+			return nil, err
+		}
+		result = append(result, v)
+	}
+	return result, nil
+}
+
+func GetAllVacations(db *sql.DB) ([]Vacation, error) {
+	rows, err := db.Query(
+		"SELECT id, user_login, date_from::text, date_to::text, comment FROM user_vacations ORDER BY user_login, date_from",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []Vacation
+	for rows.Next() {
+		var v Vacation
+		if err := rows.Scan(&v.ID, &v.Login, &v.DateFrom, &v.DateTo, &v.Comment); err != nil {
+			return nil, err
+		}
+		result = append(result, v)
+	}
+	return result, nil
+}
+
+func AddVacation(db *sql.DB, login, dateFrom, dateTo, comment string) (int, error) {
+	var id int
+	err := db.QueryRow(
+		"INSERT INTO user_vacations (user_login, date_from, date_to, comment) VALUES ($1, $2, $3, $4) RETURNING id",
+		login, dateFrom, dateTo, comment,
+	).Scan(&id)
+	return id, err
+}
+
+func DeleteVacation(db *sql.DB, id int) error {
+	_, err := db.Exec("DELETE FROM user_vacations WHERE id = $1", id)
+	return err
+}
+
+// Resolved commits
+
+func GetResolvedCommits(db *sql.DB, issueKey string) (map[string]bool, error) {
+	rows, err := db.Query("SELECT commit_sha FROM resolved_commits WHERE issue_key = $1", issueKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[string]bool)
+	for rows.Next() {
+		var sha string
+		if err := rows.Scan(&sha); err != nil {
+			return nil, err
+		}
+		result[sha] = true
+	}
+	return result, nil
+}
+
+func ResolveCommit(db *sql.DB, issueKey, commitSHA string) error {
+	_, err := db.Exec(`INSERT INTO resolved_commits (issue_key, commit_sha) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+		issueKey, commitSHA)
+	return err
+}
+
+func UnresolveCommit(db *sql.DB, issueKey, commitSHA string) error {
+	_, err := db.Exec("DELETE FROM resolved_commits WHERE issue_key = $1 AND commit_sha = $2",
+		issueKey, commitSHA)
+	return err
 }
 
 func itoa(i int) string {

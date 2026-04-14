@@ -119,6 +119,19 @@ export default function GanttChart({ data, jiraUrl }: Props) {
                         style={{ left: `${(di / totalDays) * 100}%`, width: `${dayPct}%` }} />
                     ) : null)}
                     <div className="gantt-today" style={{ left: `${todayPct + dayPct * 0.5}%` }} />
+                    {user.vacations?.map((v, vi) => {
+                      const vFrom = daysBetween(startDate, parseDate(v.date_from));
+                      const vTo = daysBetween(startDate, parseDate(v.date_to));
+                      const l = Math.max(0, vFrom);
+                      const r = Math.min(totalDays - 1, vTo);
+                      if (r < l) return null;
+                      return (
+                        <div key={`vac-${vi}`} className="gantt-vacation"
+                          style={{ left: `${(l / totalDays) * 100}%`, width: `${((r - l + 1) / totalDays) * 100}%` }}
+                          title={`Отпуск: ${v.date_from} — ${v.date_to}${v.comment ? '\n' + v.comment : ''}`}
+                        />
+                      );
+                    })}
                   </div>
 
                   {user.tasks.map((task, ti) => (

@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import type { TableData, FileData, GanttData } from '../types/types';
+import { resolveCommit } from '../api/api';
 import GanttChart from './GanttChart';
 
 const ISSUE_RE = /([A-Z][A-Z0-9]+-\d+)/g;
+const URL_RE = /(https?:\/\/[^\s<>"]+)/g;
 
 interface Props {
   lines: string[];
@@ -28,7 +30,21 @@ function downloadFile(file: FileData) {
   URL.revokeObjectURL(url);
 }
 
+const MD_LINK_RE = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/;
+
 function LinkedText({ text, jiraUrl }: { text: string; jiraUrl?: string }) {
+  // Markdown-style link: [text](url)
+  const mdMatch = text.match(MD_LINK_RE);
+  if (mdMatch) {
+    return <a href={mdMatch[2]} target="_blank" rel="noopener noreferrer" className="issue-link">{mdMatch[1]}</a>;
+  }
+
+  // Plain URL as entire cell
+  const trimmed = text.trim();
+  if (URL_RE.test(trimmed) && trimmed.match(URL_RE)?.[0] === trimmed) {
+    return <a href={trimmed} target="_blank" rel="noopener noreferrer" className="issue-link">{trimmed}</a>;
+  }
+
   if (!jiraUrl) return <>{text}</>;
   const parts = text.split(ISSUE_RE);
   if (parts.length === 1) return <>{text}</>;
@@ -78,7 +94,73 @@ export function downloadExcel(tables: TableData[], fileName: string) {
   XLSX.writeFile(wb, `${fileName}.xlsx`);
 }
 
-function ResultTable({ table, jiraUrl }: { table: TableData; jiraUrl?: string }) {
+interface MissingCommit {
+  sha: string;
+  title: string;
+}
+
+interface MissingPopupData {
+  branch: string;
+  issueKey: string;
+  commits: MissingCommit[];
+}
+
+function parseCellMeta(cell: string): { display: string; meta: MissingPopupData | null } {
+  const idx = cell.indexOf('||');
+  if (idx < 0) return { display: cell, meta: null };
+  const display = cell.substring(0, idx);
+  const rest = cell.substring(idx + 2);
+  const sep = rest.indexOf('||');
+  if (sep < 0) return { display: cell, meta: null };
+  const issueKey = rest.substring(0, sep);
+  const commitData = rest.substring(sep + 2);
+  const commits = commitData.split('\n').filter(Boolean).map(line => {
+    const tab = line.indexOf('\t');
+    return { sha: tab >= 0 ? line.substring(0, tab) : line, title: tab >= 0 ? line.substring(tab + 1) : '' };
+  });
+  return { display, meta: { branch: '', issueKey, commits } };
+}
+
+function MissingCommitsPopup({ data, onClose }: { data: MissingPopupData; onClose: () => void }) {
+  const [resolved, setResolved] = useState<Set<string>>(new Set());
+
+  const handleResolve = async (sha: string) => {
+    try {
+      await resolveCommit(data.issueKey, sha);
+      setResolved(prev => new Set(prev).add(sha));
+    } catch { /* ignore */ }
+  };
+
+  return (
+    <div className="missing-popup-overlay" onClick={onClose}>
+      <div className="missing-popup" onClick={e => e.stopPropagation()}>
+        <div className="missing-popup-header">
+          <span>Недостающие коммиты — {data.branch}</span>
+          <button className="missing-popup-close" onClick={onClose}>&times;</button>
+        </div>
+        <div className="missing-popup-body">
+          {data.commits.map(c => (
+            <div key={c.sha} className={`missing-commit-row ${resolved.has(c.sha) ? 'resolved' : ''}`}>
+              <code className="missing-commit-sha">{c.sha.slice(0, 8)}</code>
+              <span className="missing-commit-title">{c.title}</span>
+              {!resolved.has(c.sha) ? (
+                <button className="btn-resolve" onClick={() => handleResolve(c.sha)}>Resolve</button>
+              ) : (
+                <span className="resolved-badge">Resolved</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResultTable({ table, jiraUrl, onMissingClick }: {
+  table: TableData;
+  jiraUrl?: string;
+  onMissingClick?: (data: MissingPopupData) => void;
+}) {
   return (
     <div className="result-table-wrapper">
       <table className="result-table">
@@ -92,9 +174,22 @@ function ResultTable({ table, jiraUrl }: { table: TableData; jiraUrl?: string })
         <tbody>
           {table.rows.map((row, ri) => (
             <tr key={ri}>
-              {row.map((cell, ci) => (
-                <td key={ci}><LinkedText text={cell} jiraUrl={jiraUrl} /></td>
-              ))}
+              {row.map((cell, ci) => {
+                const { display, meta } = parseCellMeta(cell);
+                if (meta && onMissingClick) {
+                  return (
+                    <td key={ci}>
+                      <span
+                        className="missing-fraction"
+                        onClick={() => onMissingClick({ ...meta, branch: table.headers[ci] || '' })}
+                      >
+                        {display}
+                      </span>
+                    </td>
+                  );
+                }
+                return <td key={ci}><LinkedText text={cell} jiraUrl={jiraUrl} /></td>;
+              })}
             </tr>
           ))}
         </tbody>
@@ -105,6 +200,7 @@ function ResultTable({ table, jiraUrl }: { table: TableData; jiraUrl?: string })
 
 export default function OutputConsole({ lines, tables, files, gantt, isRunning, progress, error, jiraUrl }: Props) {
   const [selectedGroup, setSelectedGroup] = useState<Record<string, string>>({});
+  const [missingPopup, setMissingPopup] = useState<MissingPopupData | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const plainTables = tables.filter(t => !t.group);
@@ -164,7 +260,7 @@ export default function OutputConsole({ lines, tables, files, gantt, isRunning, 
       )}
 
       {plainTables.map((table, ti) => (
-        <ResultTable table={table} key={`plain-${ti}`} jiraUrl={jiraUrl} />
+        <ResultTable table={table} key={`plain-${ti}`} jiraUrl={jiraUrl} onMissingClick={setMissingPopup} />
       ))}
 
       {gantt && !isRunning && <GanttChart data={gantt} jiraUrl={jiraUrl} />}
@@ -184,7 +280,7 @@ export default function OutputConsole({ lines, tables, files, gantt, isRunning, 
                 ))}
               </select>
             </div>
-            {active && <ResultTable table={active} jiraUrl={jiraUrl} />}
+            {active && <ResultTable table={active} jiraUrl={jiraUrl} onMissingClick={setMissingPopup} />}
           </div>
         );
       })}
@@ -192,6 +288,7 @@ export default function OutputConsole({ lines, tables, files, gantt, isRunning, 
       {isRunning && <div className="output-lines"><div className="output-line-text" style={{ color: 'var(--primary)' }}>Выполняется...</div></div>}
       {error && <div className="output-lines"><div className="output-line-text" style={{ color: 'var(--danger)' }}>[ОШИБКА] {error}</div></div>}
       <div ref={bottomRef} />
+      {missingPopup && <MissingCommitsPopup data={missingPopup} onClose={() => setMissingPopup(null)} />}
     </div>
   );
 }

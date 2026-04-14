@@ -93,6 +93,37 @@ func main() {
 		}
 	})
 
+	// Vacations
+	mux.HandleFunc("/api/vacations", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			configH.GetVacations(w, r)
+		case "POST":
+			configH.AddVacation(w, r)
+		default:
+			http.Error(w, "method not allowed", 405)
+		}
+	})
+	mux.HandleFunc("/api/vacations/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "DELETE" {
+			configH.DeleteVacation(w, r)
+		} else {
+			http.Error(w, "method not allowed", 405)
+		}
+	})
+
+	// Resolved commits
+	mux.HandleFunc("/api/resolved-commits", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "POST":
+			configH.ResolveCommit(w, r)
+		case "DELETE":
+			configH.UnresolveCommit(w, r)
+		default:
+			http.Error(w, "method not allowed", 405)
+		}
+	})
+
 	// Function params (saved state)
 	mux.HandleFunc("/api/fn-params/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {

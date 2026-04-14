@@ -46,6 +46,16 @@ func GetRegistry() []FuncDef {
 			Runner: RunWorkload,
 		},
 		{
+			ID:          "worklogs",
+			Name:        "Ворклоги",
+			Description: "Таймшит: залогированное время по дням недели",
+			Layout:      "inline",
+			Params: []Param{
+				{Name: "period", Type: "select", Label: "Период", Default: "Эта неделя", Options: []string{"Эта неделя", "Прошлая неделя"}},
+			},
+			Runner: RunWorklogs,
+		},
+		{
 			ID:          "estimates",
 			Name:        "Анализ оценок",
 			Description: "Анализ точности оценок времени по пользователям",
@@ -167,6 +177,17 @@ func GetRegistry() []FuncDef {
 				{Name: "branch_prefix", Type: "string", Label: "Префикс веток", Default: "release-"},
 			},
 			Runner: RunCommitTracker,
+		},
+		{
+			ID:          "bug-epic-cleanup",
+			Name:        "Эпик у ошибок",
+			Description: "Удалить эпик у ошибок, связанных с историями",
+			Params: []Param{
+				{Name: "project", Type: "multicheck", Label: "Проекты", Required: true, Options: []string{"ECPSKL", "ECPTRANSIT"}},
+				{Name: "epic_field", Type: "string", Label: "Поле Epic Link", Default: "customfield_10109"},
+				{Name: "remove_epic", Type: "boolean", Label: "Удалить эпик", Default: "false"},
+			},
+			Runner: RunBugEpicCleanup,
 		},
 		{
 			ID:          "msproject",

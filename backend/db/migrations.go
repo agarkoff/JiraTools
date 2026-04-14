@@ -54,6 +54,22 @@ func RunMigrations(db *sql.DB) error {
 			cached_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_task_cache_project ON task_cache(project)`,
+		`CREATE TABLE IF NOT EXISTS resolved_commits (
+			id         SERIAL PRIMARY KEY,
+			issue_key  VARCHAR(32) NOT NULL,
+			commit_sha VARCHAR(64) NOT NULL,
+			resolved_at TIMESTAMPTZ DEFAULT NOW(),
+			UNIQUE(issue_key, commit_sha)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_resolved_commits_issue ON resolved_commits(issue_key)`,
+		`CREATE TABLE IF NOT EXISTS user_vacations (
+			id         SERIAL PRIMARY KEY,
+			user_login VARCHAR(128) NOT NULL,
+			date_from  DATE NOT NULL,
+			date_to    DATE NOT NULL,
+			comment    TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_vacations_login ON user_vacations(user_login)`,
 	}
 
 	for i, m := range migrations {

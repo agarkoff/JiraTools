@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getConfig, updateConfig, testConnection, testGitlab, getUsers, addUser, deleteUser } from '../api/api';
+import { getConfig, updateConfig, testConnection, testGitlab, getUsers, addUser, deleteUser, getVacations, addVacation, deleteVacation } from '../api/api';
+import type { Vacation } from '../api/api';
 
 export default function ConfigPage() {
   const [cfg, setCfg] = useState<Record<string, string>>({});
@@ -8,10 +9,16 @@ export default function ConfigPage() {
   const [testResult, setTestResult] = useState<{ status: string; message: string } | null>(null);
   const [gitlabTestResult, setGitlabTestResult] = useState<{ status: string; message: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [vacations, setVacations] = useState<Vacation[]>([]);
+  const [expandedUser, setExpandedUser] = useState<string | null>(null);
+  const [vacForm, setVacForm] = useState<{ from: string; to: string; comment: string }>({ from: '', to: '', comment: '' });
+
+  const loadVacations = () => getVacations().then(setVacations);
 
   useEffect(() => {
     getConfig().then(setCfg);
     getUsers().then(setUsers);
+    loadVacations();
   }, []);
 
   const handleSave = async () => {
@@ -46,6 +53,20 @@ export default function ConfigPage() {
     await deleteUser(login);
     setUsers(await getUsers());
   };
+
+  const handleAddVacation = async (login: string) => {
+    if (!vacForm.from || !vacForm.to) return;
+    await addVacation(login, vacForm.from, vacForm.to, vacForm.comment);
+    setVacForm({ from: '', to: '', comment: '' });
+    await loadVacations();
+  };
+
+  const handleDeleteVacation = async (id: number) => {
+    await deleteVacation(id);
+    await loadVacations();
+  };
+
+  const userVacations = (login: string) => vacations.filter(v => v.user_login === login);
 
   return (
     <div className="config-page">
@@ -115,15 +136,6 @@ export default function ConfigPage() {
               onChange={e => setCfg({ ...cfg, gitlab_token: e.target.value })}
             />
           </div>
-          <div className="form-group">
-            <label>Проект (ID или путь)</label>
-            <input
-              type="text"
-              value={cfg.gitlab_project || ''}
-              onChange={e => setCfg({ ...cfg, gitlab_project: e.target.value })}
-              placeholder="group/project"
-            />
-          </div>
         </div>
         <div className="btn-row">
           <button className="btn btn-secondary" onClick={async () => {
@@ -171,14 +183,55 @@ export default function ConfigPage() {
 
       <div className="config-section">
         <h3>Пользователи</h3>
-        <ul className="user-list">
-          {users.map(u => (
-            <li className="user-item" key={u}>
-              <span>{u}</span>
-              <button onClick={() => handleDeleteUser(u)} title="Удалить">&times;</button>
-            </li>
-          ))}
-        </ul>
+        <div className="users-list">
+          {users.map(u => {
+            const uv = userVacations(u);
+            const isExpanded = expandedUser === u;
+            return (
+              <div className="user-block" key={u}>
+                <div className="user-item">
+                  <span
+                    className="user-name-toggle"
+                    onClick={() => setExpandedUser(isExpanded ? null : u)}
+                    title="Показать/скрыть отпуска"
+                  >
+                    {u}
+                    {uv.length > 0 && <span className="vacation-count">{uv.length}</span>}
+                  </span>
+                  <button onClick={() => handleDeleteUser(u)} title="Удалить">&times;</button>
+                </div>
+                {isExpanded && (
+                  <div className="vacation-panel">
+                    {uv.length > 0 && (
+                      <div className="vacation-list">
+                        {uv.map(v => (
+                          <div className="vacation-item" key={v.id}>
+                            <span className="vacation-dates">{v.date_from} &mdash; {v.date_to}</span>
+                            {v.comment && <span className="vacation-comment">{v.comment}</span>}
+                            <button className="vacation-delete" onClick={() => handleDeleteVacation(v.id)} title="Удалить">&times;</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="vacation-form">
+                      <input type="date" value={vacForm.from} onChange={e => setVacForm({ ...vacForm, from: e.target.value })} />
+                      <span>&mdash;</span>
+                      <input type="date" value={vacForm.to} onChange={e => setVacForm({ ...vacForm, to: e.target.value })} />
+                      <input
+                        type="text"
+                        value={vacForm.comment}
+                        onChange={e => setVacForm({ ...vacForm, comment: e.target.value })}
+                        placeholder="Комментарий"
+                        className="vacation-comment-input"
+                      />
+                      <button className="btn btn-secondary" onClick={() => handleAddVacation(u)}>+</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
         <div className="add-user-row">
           <input
             type="text"

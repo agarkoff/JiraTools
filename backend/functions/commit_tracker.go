@@ -2,13 +2,24 @@ package functions
 
 import (
 	"fmt"
-	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
 	"jira-tools-web/gitlab"
+	"jira-tools-web/jira"
 	"jira-tools-web/models"
 	"jira-tools-web/sse"
 )
+
+// serviceName extracts the last path component as the service name.
+// e.g. "ecp/skl/skl-common" → "skl-common"
+func serviceName(projectPath string) string {
+	if idx := strings.LastIndex(projectPath, "/"); idx >= 0 {
+		return projectPath[idx+1:]
+	}
+	return projectPath
+}
 
 func RunCommitTracker(cfg models.JiraConfig, params map[string]string, out *sse.Writer) error {
 	issueKey := strings.TrimSpace(params["issue_key"])
@@ -25,207 +36,304 @@ func RunCommitTracker(cfg models.JiraConfig, params map[string]string, out *sse.
 	if err != nil {
 		return fmt.Errorf("ошибка загрузки конфига GitLab: %v", err)
 	}
-	if glCfg.URL == "" || glCfg.Token == "" || glCfg.Project == "" {
-		return fmt.Errorf("настройте GitLab (URL, токен, проект) на странице конфигурации")
+	if glCfg.URL == "" || glCfg.Token == "" {
+		return fmt.Errorf("настройте GitLab (URL, токен) на странице конфигурации")
 	}
-	glc := gitlab.Config{URL: glCfg.URL, Token: glCfg.Token, Project: glCfg.Project}
+	glc := gitlab.Config{URL: glCfg.URL, Token: glCfg.Token}
 
-	// 1. Find MRs
-	out.Printf("Поиск MR по ключу %s...", issueKey)
-	mrs, err := gitlab.SearchMergeRequests(glc, issueKey)
+	// 1. Collect GitLab links from remote links
+	out.Printf("Загрузка ссылок задачи %s...", issueKey)
+
+	type linkKey struct{ t, p, id string }
+	seenLink := map[linkKey]bool{}
+	var mrLinks []gitlab.ParsedLink
+	var commitLinks []gitlab.ParsedLink
+
+	addLink := func(pl gitlab.ParsedLink) {
+		var k linkKey
+		if pl.Type == "mr" {
+			k = linkKey{"mr", pl.ProjectPath, fmt.Sprintf("%d", pl.MRIID)}
+		} else {
+			k = linkKey{"commit", pl.ProjectPath, pl.CommitSHA}
+		}
+		if seenLink[k] {
+			return
+		}
+		seenLink[k] = true
+		switch pl.Type {
+		case "mr":
+			mrLinks = append(mrLinks, pl)
+		case "commit":
+			commitLinks = append(commitLinks, pl)
+		}
+	}
+
+	remoteLinks, err := jira.FetchRemoteLinks(cfg, issueKey)
 	if err != nil {
-		return fmt.Errorf("ошибка поиска MR: %v", err)
+		out.Printf("  Не удалось загрузить remote links: %v", err)
 	}
-
-	// Filter MRs that actually contain the issue key
-	keyRe := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(issueKey) + `\b`)
-	var matchedMRs []gitlab.MergeRequest
-	for _, mr := range mrs {
-		if keyRe.MatchString(mr.Title) || keyRe.MatchString(mr.SourceBranch) {
-			matchedMRs = append(matchedMRs, mr)
+	for _, rl := range remoteLinks {
+		if parsed := gitlab.ParseGitLabURL(glCfg.URL, rl.Object.URL); parsed != nil {
+			addLink(*parsed)
 		}
 	}
 
-	if len(matchedMRs) > 0 {
-		mrHeaders := []string{"MR", "Название", "Автор", "Из ветки", "В ветку", "Статус", "Ссылка"}
-		mrRows := make([][]string, 0, len(matchedMRs))
-		for _, mr := range matchedMRs {
-			mrRows = append(mrRows, []string{
-				fmt.Sprintf("!%d", mr.IID),
-				mr.Title,
-				mr.Author.Name,
-				mr.SourceBranch,
-				mr.TargetBranch,
-				mr.State,
-				mr.WebURL,
-			})
-		}
-		out.SendTable(mrHeaders, mrRows)
-	} else {
-		out.Printf("MR не найдены.")
+	if len(mrLinks) == 0 && len(commitLinks) == 0 {
+		out.Printf("В задаче нет ссылок на GitLab.")
+		return nil
 	}
+	out.Printf("Найдено ссылок: %d MR, %d коммитов", len(mrLinks), len(commitLinks))
 
-	// 2. Find commits on default branch
-	out.Printf("Поиск коммитов в основной ветке...")
-	// Try common default branch names
-	var mainCommits []gitlab.Commit
-	for _, branch := range []string{"master", "main", "develop"} {
-		commits, err := gitlab.SearchCommits(glc, branch, issueKey)
+	// 2. Fetch MR details and their commits
+	type mrGroup struct {
+		mr       gitlab.MergeRequest
+		project  string
+		commits  []gitlab.Commit
+		services map[string]bool // service names from commit projects
+	}
+	var groups []mrGroup
+	seenCommit := map[string]bool{}
+
+	for _, link := range mrLinks {
+		mr, err := gitlab.GetMergeRequest(glc, link.ProjectPath, link.MRIID)
 		if err != nil {
+			out.Printf("  Не удалось загрузить MR !%d: %v", link.MRIID, err)
 			continue
 		}
-		for _, c := range commits {
-			if keyRe.MatchString(c.Message) {
-				mainCommits = append(mainCommits, c)
-			}
-		}
-		if len(mainCommits) > 0 {
-			out.Printf("Найдено %d коммитов в ветке %s", len(mainCommits), branch)
-			break
-		}
-	}
-
-	// Also collect commits from MR source branches
-	for _, mr := range matchedMRs {
-		commits, err := gitlab.SearchCommits(glc, mr.SourceBranch, issueKey)
+		commits, err := gitlab.GetMRCommits(glc, link.ProjectPath, link.MRIID)
 		if err != nil {
+			out.Printf("  Не удалось загрузить коммиты MR !%d: %v", link.MRIID, err)
 			continue
 		}
-		seen := make(map[string]bool)
-		for _, c := range mainCommits {
-			seen[c.ID] = true
+		g := mrGroup{
+			mr:       *mr,
+			project:  link.ProjectPath,
+			services: map[string]bool{serviceName(link.ProjectPath): true},
 		}
 		for _, c := range commits {
-			if !seen[c.ID] && keyRe.MatchString(c.Message) {
-				mainCommits = append(mainCommits, c)
+			if !seenCommit[c.ID] {
+				seenCommit[c.ID] = true
+				g.commits = append(g.commits, c)
 			}
 		}
+		groups = append(groups, g)
 	}
 
-	if len(mainCommits) == 0 {
-		out.Printf("Коммиты с ключом %s не найдены.", issueKey)
+	// 3. Orphan commits (linked directly, not part of any MR)
+	var orphanCommits []struct {
+		commit  gitlab.Commit
+		project string
+	}
+	for _, link := range commitLinks {
+		if seenCommit[link.CommitSHA] {
+			continue
+		}
+		c, err := gitlab.GetCommit(glc, link.ProjectPath, link.CommitSHA)
+		if err != nil {
+			out.Printf("  Не удалось загрузить коммит %s: %v", link.CommitSHA[:8], err)
+			continue
+		}
+		seenCommit[c.ID] = true
+		orphanCommits = append(orphanCommits, struct {
+			commit  gitlab.Commit
+			project string
+		}{commit: *c, project: link.ProjectPath})
+	}
+
+	// Group orphan commits into a synthetic group per service
+	orphanByService := map[string]*mrGroup{}
+	for _, oc := range orphanCommits {
+		svc := serviceName(oc.project)
+		g, ok := orphanByService[svc]
+		if !ok {
+			g = &mrGroup{
+				project:  oc.project,
+				services: map[string]bool{svc: true},
+			}
+			orphanByService[svc] = g
+		}
+		g.commits = append(g.commits, oc.commit)
+	}
+	for _, g := range orphanByService {
+		groups = append(groups, *g)
+	}
+
+	// Filter out merge commits and resolved commits
+	resolved, _ := models.GetResolvedCommits(db, issueKey)
+	for i := range groups {
+		var filtered []gitlab.Commit
+		for _, c := range groups[i].commits {
+			if strings.HasPrefix(c.Title, "Merge ") {
+				continue
+			}
+			if resolved[c.ID] {
+				continue
+			}
+			filtered = append(filtered, c)
+		}
+		groups[i].commits = filtered
+	}
+	{
+		var nonEmpty []mrGroup
+		for _, g := range groups {
+			if len(g.commits) > 0 {
+				nonEmpty = append(nonEmpty, g)
+			}
+		}
+		groups = nonEmpty
+	}
+
+	if len(groups) == 0 {
+		out.Printf("Не найдено MR или коммитов.")
 		return nil
 	}
 
-	// 3. Get diffs for main commits
-	out.Printf("Загрузка diff для %d коммитов...", len(mainCommits))
-	type commitWithDiff struct {
-		commit gitlab.Commit
-		diff   []string // normalized
+	// 4. List release branches per project
+	projectSet := map[string]bool{}
+	for _, g := range groups {
+		projectSet[g.project] = true
 	}
-	var originals []commitWithDiff
-	for _, c := range mainCommits {
-		diffs, err := gitlab.GetCommitDiff(glc, c.ID)
+
+	var allBranchNames []string
+	branchNameSet := map[string]bool{}
+	projectBranches := map[string]map[string]bool{}
+
+	for proj := range projectSet {
+		branches, err := gitlab.ListBranches(glc, proj, branchPrefix)
 		if err != nil {
-			out.Printf("  Не удалось загрузить diff %s: %v", c.ShortID, err)
 			continue
 		}
-		originals = append(originals, commitWithDiff{
-			commit: c,
-			diff:   gitlab.NormalizeDiff(diffs),
-		})
+		pb := map[string]bool{}
+		for _, b := range branches {
+			pb[b.Name] = true
+			if !branchNameSet[b.Name] {
+				branchNameSet[b.Name] = true
+				allBranchNames = append(allBranchNames, b.Name)
+			}
+		}
+		projectBranches[proj] = pb
 	}
+	sort.Slice(allBranchNames, func(i, j int) bool {
+		return branchNum(allBranchNames[i]) < branchNum(allBranchNames[j])
+	})
+	// Keep only last 3 release branches
+	if len(allBranchNames) > 3 {
+		allBranchNames = allBranchNames[len(allBranchNames)-3:]
+	}
+	out.Printf("Релизных веток: %d (показаны последние)", len(allBranchNames))
 
-	// 4. List release branches
-	out.Printf("Поиск релизных веток (%s*)...", branchPrefix)
-	branches, err := gitlab.ListBranches(glc, branchPrefix)
-	if err != nil {
-		return fmt.Errorf("ошибка загрузки веток: %v", err)
+	// 6. For each group, check each commit in each release branch
+	type branchStatus struct {
+		total   int
+		found   int
+		missing []gitlab.Commit
 	}
-	out.Printf("Найдено %d релизных веток", len(branches))
+	type groupResult struct {
+		group    mrGroup
+		branches map[string]branchStatus
+	}
+	var results []groupResult
 
-	// 5. For each original commit, check presence in each release branch
-	// Result: commit -> branch -> match info
-	type branchMatch struct {
-		found      bool
-		matchSHA   string
-		similarity float64
+	totalWork := 0
+	for _, g := range groups {
+		totalWork += len(g.commits) * len(allBranchNames)
 	}
-	type commitResult struct {
-		original commitWithDiff
-		branches map[string]branchMatch
-	}
-	var results []commitResult
-
-	total := len(originals) * len(branches)
 	progress := 0
 
-	for _, orig := range originals {
-		cr := commitResult{
-			original: orig,
-			branches: make(map[string]branchMatch),
+	for _, g := range groups {
+		gr := groupResult{
+			group:    g,
+			branches: make(map[string]branchStatus),
 		}
 
-		for _, branch := range branches {
-			progress++
-			out.SendProgress(progress, total)
+		pb := projectBranches[g.project]
+		for _, bname := range allBranchNames {
+			bs := branchStatus{total: len(g.commits)}
 
-			// Search by commit message (first line) in this branch
-			searchTerm := firstLine(orig.commit.Title)
-			if len(searchTerm) > 100 {
-				searchTerm = searchTerm[:100]
-			}
-
-			candidates, err := gitlab.SearchCommits(glc, branch.Name, issueKey)
-			if err != nil {
-				cr.branches[branch.Name] = branchMatch{found: false}
+			if !pb[bname] {
+				progress += len(g.commits)
+				if totalWork > 0 {
+					out.SendProgress(progress, totalWork)
+				}
+				gr.branches[bname] = bs
 				continue
 			}
 
-			// Check each candidate
-			bestMatch := branchMatch{found: false}
-			for _, cand := range candidates {
-				if !keyRe.MatchString(cand.Message) {
-					continue
+			// Search commits with the issue key on this branch
+			candidates, _ := gitlab.SearchCommits(glc, g.project, bname, issueKey)
+
+			for _, orig := range g.commits {
+				progress++
+				if totalWork > 0 {
+					out.SendProgress(progress, totalWork)
 				}
 
-				// Exact SHA match (same commit, e.g. merged into both)
-				if cand.ID == orig.commit.ID {
-					bestMatch = branchMatch{found: true, matchSHA: cand.ShortID, similarity: 1.0}
-					break
+				matched := false
+				for _, cand := range candidates {
+					// Exact SHA match
+					if cand.ID == orig.ID {
+						matched = true
+						break
+					}
+					// Title match (cherry-picked commits keep the same message)
+					if cand.Title == orig.Title {
+						matched = true
+						break
+					}
 				}
-
-				// Compare diffs
-				candDiffs, err := gitlab.GetCommitDiff(glc, cand.ID)
-				if err != nil {
-					continue
-				}
-				candNorm := gitlab.NormalizeDiff(candDiffs)
-				sim := gitlab.DiffSimilarity(orig.diff, candNorm)
-				if sim > bestMatch.similarity {
-					bestMatch = branchMatch{found: sim >= 0.7, matchSHA: cand.ShortID, similarity: sim}
+				if matched {
+					bs.found++
+				} else {
+					bs.missing = append(bs.missing, orig)
 				}
 			}
-			cr.branches[branch.Name] = bestMatch
+			gr.branches[bname] = bs
 		}
-		results = append(results, cr)
+		results = append(results, gr)
 	}
 
-	// 6. Build result table
-	// Headers: Коммит | Сообщение | Автор | branch1 | branch2 | ...
-	branchNames := make([]string, len(branches))
-	for i, b := range branches {
-		branchNames[i] = b.Name
-	}
+	// 7. Build aggregated table
+	headers := []string{"MR", "Сервис", "Коммитов"}
+	headers = append(headers, allBranchNames...)
 
-	headers := []string{"Коммит", "Сообщение", "Автор"}
-	headers = append(headers, branchNames...)
-
+	glBase := gitlab.BaseHost(glCfg.URL)
 	rows := make([][]string, 0, len(results))
-	for _, cr := range results {
-		row := []string{
-			cr.original.commit.ShortID,
-			truncate(cr.original.commit.Title, 60),
-			cr.original.commit.AuthorName,
+	for _, gr := range results {
+		mrCell := "—"
+		if gr.group.mr.IID > 0 {
+			title := fmt.Sprintf("!%d %s", gr.group.mr.IID, truncate(gr.group.mr.Title, 50))
+			link := fmt.Sprintf("%s/%s/-/merge_requests/%d", glBase, gr.group.project, gr.group.mr.IID)
+			mrCell = fmt.Sprintf("[%s](%s)", title, link)
 		}
-		for _, bname := range branchNames {
-			m := cr.branches[bname]
-			if !m.found {
+
+		svcs := make([]string, 0, len(gr.group.services))
+		for s := range gr.group.services {
+			svcs = append(svcs, s)
+		}
+		sort.Strings(svcs)
+
+		row := []string{
+			mrCell,
+			strings.Join(svcs, ", "),
+			fmt.Sprintf("%d", len(gr.group.commits)),
+		}
+
+		for _, bname := range allBranchNames {
+			bs := gr.branches[bname]
+			if bs.found == 0 {
 				row = append(row, "—")
-			} else if m.similarity >= 0.99 {
-				row = append(row, fmt.Sprintf("%s", m.matchSHA))
+			} else if bs.found == bs.total {
+				row = append(row, "✓")
 			} else {
-				row = append(row, fmt.Sprintf("%s (%.0f%%)", m.matchSHA, m.similarity*100))
+				cell := fmt.Sprintf("%d/%d", bs.found, bs.total)
+				if len(bs.missing) > 0 {
+					var parts []string
+					for _, m := range bs.missing {
+						parts = append(parts, m.ID+"\t"+m.Title)
+					}
+					cell += "||" + issueKey + "||" + strings.Join(parts, "\n")
+				}
+				row = append(row, cell)
 			}
 		}
 		rows = append(rows, row)
@@ -235,16 +343,21 @@ func RunCommitTracker(cfg models.JiraConfig, params map[string]string, out *sse.
 	return nil
 }
 
-func firstLine(s string) string {
-	if idx := strings.IndexByte(s, '\n'); idx >= 0 {
-		return s[:idx]
+// branchNum extracts trailing number from branch name for numeric sorting.
+// e.g. "release-99" → 99, "release-100" → 100
+func branchNum(name string) int {
+	if idx := strings.LastIndex(name, "-"); idx >= 0 {
+		if n, err := strconv.Atoi(name[idx+1:]); err == nil {
+			return n
+		}
 	}
-	return s
+	return 0
 }
 
 func truncate(s string, n int) string {
-	if len(s) <= n {
+	runes := []rune(s)
+	if len(runes) <= n {
 		return s
 	}
-	return s[:n] + "..."
+	return string(runes[:n]) + "..."
 }

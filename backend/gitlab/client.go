@@ -7,18 +7,20 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
 
 type Config struct {
-	URL     string
-	Token   string
-	Project string // project ID or URL-encoded path
+	URL   string
+	Token string
 }
 
 type MergeRequest struct {
 	IID          int    `json:"iid"`
+	ProjectID    int    `json:"project_id"`
 	Title        string `json:"title"`
 	State        string `json:"state"`
 	SourceBranch string `json:"source_branch"`
@@ -49,6 +51,14 @@ type Branch struct {
 	Name string `json:"name"`
 }
 
+// ParsedLink represents a GitLab URL parsed into project path + resource.
+type ParsedLink struct {
+	ProjectPath string // e.g. "group/project"
+	Type        string // "mr" or "commit"
+	MRIID       int    // for MRs
+	CommitSHA   string // for commits
+}
+
 var httpClient = &http.Client{
 	Timeout: 30 * time.Second,
 	Transport: &http.Transport{
@@ -56,9 +66,8 @@ var httpClient = &http.Client{
 	},
 }
 
-func apiGet(cfg Config, path string, params url.Values) ([]byte, error) {
-	u := strings.TrimRight(cfg.URL, "/") + "/api/v4/projects/" +
-		url.PathEscape(cfg.Project) + path
+func apiGetRaw(cfg Config, path string, params url.Values) ([]byte, error) {
+	u := BaseHost(cfg.URL) + "/api/v4" + path
 	if len(params) > 0 {
 		u += "?" + params.Encode()
 	}
@@ -85,29 +94,105 @@ func apiGet(cfg Config, path string, params url.Values) ([]byte, error) {
 	return body, nil
 }
 
-// SearchMergeRequests finds MRs matching a search string (title, branch).
-func SearchMergeRequests(cfg Config, search string) ([]MergeRequest, error) {
-	params := url.Values{}
-	params.Set("search", search)
-	params.Set("per_page", "50")
-	params.Set("state", "all")
+func projectPrefix(projectPath string) string {
+	return "/projects/" + url.PathEscape(projectPath)
+}
 
-	body, err := apiGet(cfg, "/merge_requests", params)
+// BaseHost extracts "https://host" from a full URL, stripping any path.
+func BaseHost(rawURL string) string {
+	u, err := url.Parse(strings.TrimRight(rawURL, "/"))
+	if err != nil || u.Host == "" {
+		return strings.TrimRight(rawURL, "/")
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// ParseGitLabURL extracts project path and resource from a GitLab URL.
+// Returns nil if the URL doesn't match the configured GitLab instance.
+func ParseGitLabURL(baseURL, linkURL string) *ParsedLink {
+	base := strings.ToLower(BaseHost(baseURL))
+	lower := strings.ToLower(linkURL)
+	if !strings.HasPrefix(lower, base) {
+		return nil
+	}
+	rest := linkURL[len(base):]
+	return parseGitLabPath(rest)
+}
+
+// FindAllGitLabURLs scans arbitrary text for GitLab URLs and returns parsed links.
+func FindAllGitLabURLs(baseURL, text string) []ParsedLink {
+	base := BaseHost(baseURL)
+	escaped := regexp.QuoteMeta(base)
+	re := regexp.MustCompile(`(?i)` + escaped + `(/[^\s"<>)\]]+)`)
+	matches := re.FindAllStringSubmatch(text, -1)
+	var result []ParsedLink
+	for _, m := range matches {
+		if p := parseGitLabPath(m[1]); p != nil {
+			result = append(result, *p)
+		}
+	}
+	return result
+}
+
+var (
+	mrPathRe     = regexp.MustCompile(`^/(.+?)/-/merge_requests/(\d+)`)
+	commitPathRe = regexp.MustCompile(`^/(.+?)/-/commit/([0-9a-f]+)`)
+)
+
+func parseGitLabPath(path string) *ParsedLink {
+	if m := mrPathRe.FindStringSubmatch(path); m != nil {
+		iid, _ := strconv.Atoi(m[2])
+		return &ParsedLink{ProjectPath: m[1], Type: "mr", MRIID: iid}
+	}
+	if m := commitPathRe.FindStringSubmatch(path); m != nil {
+		return &ParsedLink{ProjectPath: m[1], Type: "commit", CommitSHA: m[2]}
+	}
+	return nil
+}
+
+// GetMergeRequest fetches a single MR by project path and IID.
+func GetMergeRequest(cfg Config, project string, iid int) (*MergeRequest, error) {
+	path := fmt.Sprintf("%s/merge_requests/%d", projectPrefix(project), iid)
+	body, err := apiGetRaw(cfg, path, nil)
 	if err != nil {
 		return nil, err
 	}
-	var mrs []MergeRequest
-	return mrs, json.Unmarshal(body, &mrs)
+	var mr MergeRequest
+	return &mr, json.Unmarshal(body, &mr)
+}
+
+// GetMRCommits returns all commits belonging to a merge request.
+func GetMRCommits(cfg Config, project string, iid int) ([]Commit, error) {
+	path := fmt.Sprintf("%s/merge_requests/%d/commits", projectPrefix(project), iid)
+	params := url.Values{}
+	params.Set("per_page", "100")
+	body, err := apiGetRaw(cfg, path, params)
+	if err != nil {
+		return nil, err
+	}
+	var commits []Commit
+	return commits, json.Unmarshal(body, &commits)
+}
+
+// GetCommit fetches a single commit.
+func GetCommit(cfg Config, project string, sha string) (*Commit, error) {
+	path := projectPrefix(project) + "/repository/commits/" + url.PathEscape(sha)
+	body, err := apiGetRaw(cfg, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var c Commit
+	return &c, json.Unmarshal(body, &c)
 }
 
 // SearchCommits finds commits on a branch containing the search string in message.
-func SearchCommits(cfg Config, branch, search string) ([]Commit, error) {
+func SearchCommits(cfg Config, project string, branch, search string) ([]Commit, error) {
 	params := url.Values{}
 	params.Set("ref_name", branch)
 	params.Set("search", search)
 	params.Set("per_page", "100")
 
-	body, err := apiGet(cfg, "/repository/commits", params)
+	body, err := apiGetRaw(cfg, projectPrefix(project)+"/repository/commits", params)
 	if err != nil {
 		return nil, err
 	}
@@ -116,8 +201,8 @@ func SearchCommits(cfg Config, branch, search string) ([]Commit, error) {
 }
 
 // GetCommitDiff returns the diff files for a commit.
-func GetCommitDiff(cfg Config, sha string) ([]DiffFile, error) {
-	body, err := apiGet(cfg, "/repository/commits/"+url.PathEscape(sha)+"/diff", nil)
+func GetCommitDiff(cfg Config, project string, sha string) ([]DiffFile, error) {
+	body, err := apiGetRaw(cfg, projectPrefix(project)+"/repository/commits/"+url.PathEscape(sha)+"/diff", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -126,12 +211,12 @@ func GetCommitDiff(cfg Config, sha string) ([]DiffFile, error) {
 }
 
 // ListBranches returns branches matching a search prefix.
-func ListBranches(cfg Config, search string) ([]Branch, error) {
+func ListBranches(cfg Config, project string, search string) ([]Branch, error) {
 	params := url.Values{}
 	params.Set("search", search)
 	params.Set("per_page", "100")
 
-	body, err := apiGet(cfg, "/repository/branches", params)
+	body, err := apiGetRaw(cfg, projectPrefix(project)+"/repository/branches", params)
 	if err != nil {
 		return nil, err
 	}
@@ -139,9 +224,9 @@ func ListBranches(cfg Config, search string) ([]Branch, error) {
 	return branches, json.Unmarshal(body, &branches)
 }
 
-// TestConnection checks that the API token and project are valid.
+// TestConnection checks that the API token is valid.
 func TestConnection(cfg Config) error {
-	u := strings.TrimRight(cfg.URL, "/") + "/api/v4/projects/" + url.PathEscape(cfg.Project)
+	u := BaseHost(cfg.URL) + "/api/v4/user"
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
 		return err
